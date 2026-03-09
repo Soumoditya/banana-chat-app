@@ -82,9 +82,9 @@ export default function SettingsScreen() {
             {/* About */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>About</Text>
-                {settingItem('information-circle-outline', 'About Banana Chat', 'Version 1.0.0', () => router.push('/about'))}
-                {settingItem('document-text-outline', 'Terms of Service', null, () => Linking.openURL('https://banana-chat.app/terms').catch(() => {}))}
-                {settingItem('shield-outline', 'Privacy Policy', null, () => Linking.openURL('https://banana-chat.app/privacy').catch(() => {}))}
+                {settingItem('shield-checkmark-outline', 'Privacy & Security', 'Manage your data', null, <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />)}
+                {settingItem('document-text-outline', 'Terms of Service', 'Read our terms', () => Linking.openURL('https://banana-chat.app/terms').catch(() => {}))}
+                {settingItem('information-circle-outline', 'About Banana Chat', `Version ${Constants.expoConfig?.version || '2.0.0'}`, () => router.push('/about'))}
             </View>
 
             {/* Sign Out */}
@@ -97,7 +97,7 @@ export default function SettingsScreen() {
             </TouchableOpacity>
 
             <View style={styles.footer}>
-                <Text style={styles.footerText}>🍌 Banana Chat v1.0.0</Text>
+                <Text style={styles.footerText}>🍌 Banana Chat v{Constants.expoConfig?.version || '2.0.0'}</Text>
             </View>
         </ScrollView>
     );

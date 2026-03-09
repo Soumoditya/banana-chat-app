@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 export default function AboutScreen() {
     const router = useRouter();
@@ -38,7 +39,7 @@ export default function AboutScreen() {
             </View>
 
             <View style={styles.section}>
-                {infoItem('information-circle-outline', 'Version', '1.0.0')}
+                {infoItem('information-circle-outline', 'Version', Constants.expoConfig?.version || '2.0.0')}
                 {infoItem('construct-outline', 'Build', 'Production')}
                 {infoItem('logo-react', 'Framework', 'React Native + Expo')}
             </View>
