@@ -2,7 +2,7 @@
   "expo": {
     "name": "Banana Chat",
     "slug": "banana-chat",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +15,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bananachat.app"
+      "bundleIdentifier": "com.bananachat.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Banana Chat needs camera access for video calls.",
+        "NSMicrophoneUsageDescription": "Banana Chat needs microphone access for audio calls."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +28,14 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.bananachat.app",
-      "versionCode": 11
+      "versionCode": 12,
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "ACCESS_WIFI_STATE",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",

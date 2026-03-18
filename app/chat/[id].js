@@ -396,12 +396,18 @@ export default function ChatScreen() {
                 >
                     {/* Reply reference */}
                     {msg.replyTo && (
-                        <View style={[styles.replyRef, isMe && styles.replyRefMe]}>
+                        <TouchableOpacity 
+                            style={[styles.replyRef, isMe && styles.replyRefMe]}
+                            onPress={() => {
+                                const targetIdx = messages.findIndex(m => m.id === msg.replyTo);
+                                if (targetIdx >= 0) flatListRef.current?.scrollToIndex({ index: targetIdx, animated: true, viewPosition: 0.5 });
+                            }}
+                        >
                             <View style={styles.replyBar} />
                             <Text style={styles.replyRefText} numberOfLines={1}>
                                 {messages.find(m => m.id === msg.replyTo)?.text || 'Original message'}
                             </Text>
-                        </View>
+                        </TouchableOpacity>
                     )}
 
                     <View style={[styles.msgBubble, isMe ? styles.msgBubbleMe : styles.msgBubbleOther]}>
@@ -524,8 +530,8 @@ export default function ChatScreen() {
     return (
         <KeyboardAvoidingView
             style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={0}
+            behavior="padding"
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             {/* Header */}
             <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
@@ -565,10 +571,10 @@ export default function ChatScreen() {
                         </TouchableOpacity>
 
                         <View style={styles.headerActions}>
-                            <TouchableOpacity style={styles.headerBtn} onPress={() => Alert.alert('📞 Audio Call', 'Audio calling is coming in the next update!\n\nRequires ZegoCloud SDK integration.')}>
+                            <TouchableOpacity style={styles.headerBtn} onPress={() => router.push(`/call/${chatId}?type=audio&name=${encodeURIComponent(getChatName())}&avatar=${encodeURIComponent(otherUser?.photoURL || '')}`)}>
                                 <Ionicons name="call-outline" size={20} color={Colors.primary} />
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.headerBtn} onPress={() => Alert.alert('📹 Video Call', 'Video calling is coming in the next update!\n\nRequires ZegoCloud SDK integration.')}>
+                            <TouchableOpacity style={styles.headerBtn} onPress={() => router.push(`/call/${chatId}?type=video&name=${encodeURIComponent(getChatName())}&avatar=${encodeURIComponent(otherUser?.photoURL || '')}`)}>
                                 <Ionicons name="videocam-outline" size={22} color={Colors.primary} />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.headerBtn} onPress={() => setShowMenu(true)}>
@@ -643,10 +649,12 @@ export default function ChatScreen() {
             ) : (
                 <View style={[styles.inputBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
                     <TouchableOpacity style={styles.attachBtn} onPress={handlePickImage}>
-                        <Ionicons name="image-outline" size={22} color={Colors.primary} />
+                        <Ionicons name="images" size={24} color={Colors.textSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.attachBtn} onPress={() => setShowGiphyPicker(true)}>
-                        <Text style={{ fontSize: 18 }}>GIF</Text>
+                        <View style={{ backgroundColor: Colors.surface, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: Colors.textSecondary }}>GIF</Text>
+                        </View>
                     </TouchableOpacity>
 
                     <TextInput

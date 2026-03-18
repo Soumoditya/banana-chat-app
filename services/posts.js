@@ -282,24 +282,27 @@ export const votePoll = async (postId, optionIndex, uid) => {
 export const searchPosts = async (searchTerm) => {
     if (!searchTerm || searchTerm.length < 2) return [];
 
-    // Search by content (basic approach - for full-text search you'd need Algolia)
-    const q = query(
-        collection(db, 'posts'),
-        where('deleted', '==', false),
-        where('visibility', '==', 'public'),
-        orderBy('createdAt', 'desc'),
-        limit(50)
-    );
+    try {
+        const q = query(
+            collection(db, 'posts'),
+            where('deleted', '==', false),
+            where('visibility', '==', 'public'),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+        );
 
-    const snapshot = await getDocs(q);
-    const posts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const snapshot = await getDocs(q);
+        const posts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Client-side filter
-    const term = searchTerm.toLowerCase();
-    return posts.filter(p =>
-        p.content?.toLowerCase().includes(term) ||
-        p.tags?.some(t => t.toLowerCase().includes(term))
-    );
+        const term = searchTerm.toLowerCase();
+        return posts.filter(p =>
+            p.content?.toLowerCase().includes(term) ||
+            p.tags?.some(t => t.toLowerCase().includes(term))
+        );
+    } catch (err) {
+        console.warn('searchPosts error:', err.message);
+        return [];
+    }
 };
 
 // COMMENTS

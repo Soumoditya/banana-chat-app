@@ -5,13 +5,22 @@ const CLOUDINARY_UPLOAD_PRESET = 'banana';
 // The cloud name needs to be set - user can update this
 export const CLOUD_NAME = CLOUDINARY_CLOUD_NAME;
 
-export const uploadToCloudinary = async (fileObj, resourceType = 'image') => {
+export const uploadToCloudinary = async (fileInput, resourceType = 'image') => {
     try {
         const formData = new FormData();
 
-        const filename = fileObj.fileName || fileObj.uri.split('/').pop() || 'upload.jpg';
+        let uri, filename, mimeType;
+        if (typeof fileInput === 'string') {
+            uri = fileInput;
+            filename = uri.split('/').pop() || 'upload.jpg';
+        } else if (fileInput && fileInput.uri) {
+            uri = fileInput.uri;
+            filename = fileInput.fileName || uri.split('/').pop() || 'upload.jpg';
+            mimeType = fileInput.mimeType;
+        } else {
+            throw new Error("Invalid file input for Cloudinary upload.");
+        }
         
-        let mimeType = fileObj.mimeType;
         if (!mimeType) {
             const match = /\.(\w+)$/.exec(filename);
             const ext = match ? match[1].toLowerCase() : 'jpg';
@@ -19,7 +28,7 @@ export const uploadToCloudinary = async (fileObj, resourceType = 'image') => {
         }
 
         formData.append('file', {
-            uri: fileObj.uri,
+            uri: uri,
             name: filename,
             type: mimeType,
         });
