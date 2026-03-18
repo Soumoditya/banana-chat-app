@@ -8,7 +8,7 @@ import { Colors } from '../utils/theme';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import React from 'react';
 import * as Clipboard from 'expo-clipboard';
-
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 const paperTheme = {
     ...MD3DarkTheme,
     colors: {
@@ -148,43 +148,45 @@ const errorStyles = StyleSheet.create({
 
 export default function RootLayout() {
     return (
-        <SafeAreaProvider>
-            <ErrorBoundary>
-                <PaperProvider theme={paperTheme}>
-                    <AuthProvider>
-                        <StatusBar style="light" backgroundColor={Colors.background} />
-                        <Stack
-                            screenOptions={{
-                                headerShown: false,
-                                contentStyle: { backgroundColor: Colors.background },
-                                animation: 'slide_from_right',
-                                gestureEnabled: true,
-                            }}
-                        >
-                            <Stack.Screen name="index" />
-                            <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-                            <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="user/[id]" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_bottom' }} />
-                            <Stack.Screen name="story/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
-                            <Stack.Screen name="create" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-                            <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="blocked-users" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="notifications-settings" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="close-friends" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="story-archive" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="recently-deleted" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="highlight-editor" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="hide-story-from" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="create-group" options={{ animation: 'slide_from_right' }} />
-                            <Stack.Screen name="followers-list" options={{ animation: 'slide_from_right' }} />
-                        </Stack>
-                    </AuthProvider>
-                </PaperProvider>
-            </ErrorBoundary>
-        </SafeAreaProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <SafeAreaProvider>
+                <ErrorBoundary>
+                    <PaperProvider theme={paperTheme}>
+                        <AuthProvider>
+                            <StatusBar style="light" backgroundColor={Colors.background} />
+                            <Stack
+                                screenOptions={{
+                                    headerShown: false,
+                                    contentStyle: { backgroundColor: Colors.background },
+                                    animation: 'slide_from_right',
+                                    gestureEnabled: true,
+                                }}
+                            >
+                                <Stack.Screen name="index" />
+                                <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                                <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                                <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="user/[id]" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_bottom' }} />
+                                <Stack.Screen name="story/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
+                                <Stack.Screen name="create" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+                                <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="blocked-users" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="notifications-settings" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="close-friends" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="story-archive" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="recently-deleted" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="highlight-editor" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="hide-story-from" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="create-group" options={{ animation: 'slide_from_right' }} />
+                                <Stack.Screen name="followers-list" options={{ animation: 'slide_from_right' }} />
+                            </Stack>
+                        </AuthProvider>
+                    </PaperProvider>
+                </ErrorBoundary>
+            </SafeAreaProvider>
+        </GestureHandlerRootView>
     );
 }

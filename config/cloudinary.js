@@ -5,18 +5,23 @@ const CLOUDINARY_UPLOAD_PRESET = 'banana';
 // The cloud name needs to be set - user can update this
 export const CLOUD_NAME = CLOUDINARY_CLOUD_NAME;
 
-export const uploadToCloudinary = async (fileUri, resourceType = 'image') => {
+export const uploadToCloudinary = async (fileObj, resourceType = 'image') => {
     try {
         const formData = new FormData();
 
-        const filename = fileUri.split('/').pop();
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `${resourceType}/${match[1]}` : `${resourceType}/jpeg`;
+        const filename = fileObj.fileName || fileObj.uri.split('/').pop() || 'upload.jpg';
+        
+        let mimeType = fileObj.mimeType;
+        if (!mimeType) {
+            const match = /\.(\w+)$/.exec(filename);
+            const ext = match ? match[1].toLowerCase() : 'jpg';
+            mimeType = ext === 'jpg' ? 'image/jpeg' : `${resourceType}/${ext}`;
+        }
 
         formData.append('file', {
-            uri: fileUri,
+            uri: fileObj.uri,
             name: filename,
-            type: type,
+            type: mimeType,
         });
         formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 

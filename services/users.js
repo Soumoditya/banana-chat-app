@@ -44,11 +44,18 @@ export const searchUsers = async (searchTerm) => {
         );
         const usernameSnapshot = await getDocs(qUsername);
         usernameResults = usernameSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Fallback exact match for legacy accounts
+        if (usernameResults.length === 0) {
+            const qExact = query(collection(db, 'users'), where('username', '==', searchTerm), limit(5));
+            const exactSnap = await getDocs(qExact);
+            usernameResults = exactSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
     } catch (err) {
         console.warn('Username search failed:', err.message);
     }
 
-    // Search by display name (displayNameLower) — may fail if field doesn't exist
+    // Search by display name (displayNameLower)
     let displayResults = [];
     try {
         const qDisplay = query(
@@ -59,8 +66,15 @@ export const searchUsers = async (searchTerm) => {
         );
         const displaySnapshot = await getDocs(qDisplay);
         displayResults = displaySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Fallback exact match
+        if (displayResults.length === 0) {
+            const qExactDisplay = query(collection(db, 'users'), where('displayName', '==', searchTerm), limit(5));
+            const exactSnapDisplay = await getDocs(qExactDisplay);
+            displayResults = exactSnapDisplay.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
     } catch (err) {
-        console.warn('Display name search failed (field may not exist):', err.message);
+        console.warn('Display name search failed:', err.message);
     }
 
     // Merge and deduplicate
@@ -190,5 +204,30 @@ export const subscribeToUserProfile = (uid, callback) => {
         if (snapshot.exists()) {
             callback({ id: snapshot.id, ...snapshot.data() });
         }
+    });
+};
+
+// Chat Preferences
+export const pinChat = async (uid, chatId) => {
+    await updateDoc(doc(db, 'users', uid), {
+        pinnedChats: arrayUnion(chatId),
+    });
+};
+
+export const unpinChat = async (uid, chatId) => {
+    await updateDoc(doc(db, 'users', uid), {
+        pinnedChats: arrayRemove(chatId),
+    });
+};
+
+export const archiveChat = async (uid, chatId) => {
+    await updateDoc(doc(db, 'users', uid), {
+        archivedChats: arrayUnion(chatId),
+    });
+};
+
+export const unarchiveChat = async (uid, chatId) => {
+    await updateDoc(doc(db, 'users', uid), {
+        archivedChats: arrayRemove(chatId),
     });
 };

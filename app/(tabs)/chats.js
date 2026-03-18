@@ -15,8 +15,8 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { subscribeToChats, getOrCreateDMChat } from '../../services/chat';
-import { getUserProfile, searchUsers } from '../../services/users';
+import { subscribeToChats, getOrCreateDMChat, clearChat } from '../../services/chat';
+import { getUserProfile, searchUsers, pinChat, unpinChat, archiveChat, unarchiveChat } from '../../services/users';
 import { formatTime, getInitials, truncateText, debounce } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +24,7 @@ const SECTIONS = [
     { key: 'primary', label: 'Primary' },
     { key: 'general', label: 'General' },
     { key: 'requests', label: 'Requests' },
+    { key: 'archived', label: 'Archived' },
 ];
 
 export default function ChatsScreen() {
@@ -96,11 +97,12 @@ export default function ChatsScreen() {
     const friendIds = userProfile?.friends || [];
     const followingIds = userProfile?.following || [];
     const knownUsers = new Set([...friendIds, ...followingIds]);
+    const pinnedChats = userProfile?.pinnedChats || [];
+    const archivedChats = userProfile?.archivedChats || [];
 
     const getSectionChats = () => {
         let filtered = chats;
 
-        // Apply text search filter first
         if (searchText) {
             const term = searchText.toLowerCase();
             filtered = filtered.filter(chat => {
@@ -112,25 +114,47 @@ export default function ChatsScreen() {
             });
         }
 
-        // Apply section filter
+        let sectionList = [];
         switch (activeSection) {
             case 'primary':
-                return filtered.filter(c => {
+                sectionList = filtered.filter(c => {
+                    if (archivedChats.includes(c.id)) return false;
                     if (c.type === 'group' || c.isBroadcast) return false;
                     const otherId = c.participants?.find(p => p !== user?.uid);
                     return knownUsers.has(otherId);
                 });
+                break;
             case 'general':
-                return filtered.filter(c => c.type === 'group' || c.isBroadcast);
+                sectionList = filtered.filter(c => {
+                    if (archivedChats.includes(c.id)) return false;
+                    return c.type === 'group' || c.isBroadcast;
+                });
+                break;
             case 'requests':
-                return filtered.filter(c => {
+                sectionList = filtered.filter(c => {
+                    if (archivedChats.includes(c.id)) return false;
                     if (c.type === 'group' || c.isBroadcast) return false;
                     const otherId = c.participants?.find(p => p !== user?.uid);
                     return !knownUsers.has(otherId);
                 });
+                break;
+            case 'archived':
+                sectionList = filtered.filter(c => archivedChats.includes(c.id));
+                break;
             default:
-                return filtered;
+                sectionList = filtered;
         }
+
+        return sectionList.sort((a, b) => {
+            const aPinned = pinnedChats.includes(a.id);
+            const bPinned = pinnedChats.includes(b.id);
+            if (aPinned && !bPinned) return -1;
+            if (!aPinned && bPinned) return 1;
+
+            const aTime = a.lastMessage?.timestamp || 0;
+            const bTime = b.lastMessage?.timestamp || 0;
+            return bTime - aTime;
+        });
     };
 
     const getChatName = (chat) => {
@@ -150,20 +174,46 @@ export default function ChatsScreen() {
 
     const handleChatLongPress = (chat) => {
         const name = getChatName(chat);
+        const isPinned = userProfile?.pinnedChats?.includes(chat.id);
+        const isArchived = userProfile?.archivedChats?.includes(chat.id);
+
         Alert.alert(
             name,
             'What would you like to do?',
             [
                 { text: 'Cancel', style: 'cancel' },
-                { text: '📌 Pin Chat', onPress: () => Alert.alert('Pinned', `"${name}" pinned to top`) },
-                { text: '🔇 Mute', onPress: () => Alert.alert('Muted', `"${name}" notifications muted`) },
-                { text: '📂 Archive', onPress: () => Alert.alert('Archived', `"${name}" moved to archive`) },
-                { text: '🗑️ Delete', style: 'destructive', onPress: () => {
-                    Alert.alert('Delete Chat', `Delete "${name}" and all messages?`, [
+                {
+                    text: isPinned ? '📌 Unpin Chat' : '📌 Pin Chat',
+                    onPress: async () => {
+                        try {
+                            if (isPinned) await unpinChat(user.uid, chat.id);
+                            else await pinChat(user.uid, chat.id);
+                        } catch(e) { Alert.alert('Error', e.message); }
+                    }
+                },
+                {
+                    text: isArchived ? '📂 Unarchive Chat' : '📂 Archive Chat',
+                    onPress: async () => {
+                        try {
+                            if (isArchived) {
+                                await unarchiveChat(user.uid, chat.id);
+                            } else {
+                                if (isPinned) await unpinChat(user.uid, chat.id);
+                                await archiveChat(user.uid, chat.id);
+                            }
+                        } catch(e) { Alert.alert('Error', e.message); }
+                    }
+                },
+                { text: '🗑️ Clear History', style: 'destructive', onPress: () => {
+                    Alert.alert('Clear History', `Delete all messages in "${name}"?`, [
                         { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => {
-                            // Remove from local list immediately
-                            setChats(prev => prev.filter(c => c.id !== chat.id));
+                        { text: 'Clear', style: 'destructive', onPress: async () => {
+                            try {
+                                await clearChat(chat.id);
+                                if (isPinned) await unpinChat(user.uid, chat.id);
+                                if (isArchived) await unarchiveChat(user.uid, chat.id);
+                                setChats(prev => prev.filter(c => c.id !== chat.id));
+                            } catch(e) { Alert.alert('Error', e.message); }
                         }},
                     ]);
                 }},
@@ -197,6 +247,9 @@ export default function ChatsScreen() {
                 <View style={styles.chatInfo}>
                     <View style={styles.chatTopRow}>
                         <Text style={styles.chatName} numberOfLines={1}>{name}</Text>
+                        {userProfile?.pinnedChats?.includes(chat.id) && (
+                            <Ionicons name="pin" size={12} color={Colors.accent} style={{ marginRight: 4 }} />
+                        )}
                         {lastMsg && (
                             <Text style={styles.chatTime}>
                                 {formatTime(lastMsg.timestamp)}

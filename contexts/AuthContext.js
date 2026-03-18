@@ -220,10 +220,23 @@ export const AuthProvider = ({ children }) => {
             // If identifier doesn't look like an email, treat as username
             if (!identifier.includes('@')) {
                 try {
-                    const q = query(collection(db, 'users'), where('usernameLower', '==', identifier.toLowerCase()));
-                    const snapshot = await getDocs(q);
+                    let q = query(collection(db, 'users'), where('usernameLower', '==', identifier.toLowerCase()));
+                    let snapshot = await getDocs(q);
+
+                    // Fallback 1: Try exact 'username' (for legacy accounts without usernameLower)
                     if (snapshot.empty) {
-                        throw new Error('No account found with that username. Try using your email instead.');
+                        q = query(collection(db, 'users'), where('username', '==', identifier));
+                        snapshot = await getDocs(q);
+                    }
+
+                    // Fallback 2: Users often confuse Display Name with Username. Let's try displayNameLower
+                    if (snapshot.empty) {
+                        q = query(collection(db, 'users'), where('displayNameLower', '==', identifier.toLowerCase()));
+                        snapshot = await getDocs(q);
+                    }
+
+                    if (snapshot.empty) {
+                        throw new Error('No account found with that username or name. Try using your email instead.');
                     }
                     const userData = snapshot.docs[0].data();
                     loginEmail = userData.email;

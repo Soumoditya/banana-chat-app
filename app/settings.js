@@ -6,6 +6,7 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { updateUserProfile } from '../services/users';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 export default function SettingsScreen() {
     const { user, userProfile, signOut } = useAuth();
@@ -42,14 +43,7 @@ export default function SettingsScreen() {
                 <View style={{ width: 24 }} />
             </View>
 
-            {/* Account */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Account</Text>
-                {settingItem('create-outline', 'Edit Profile', 'Change name, bio, photo, links', () => {
-                    router.back(); // go back to profile tab
-                    // The edit profile modal is within profile.js
-                })}
-            </View>
+
 
             {/* Privacy */}
             <View style={styles.section}>

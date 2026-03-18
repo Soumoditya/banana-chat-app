@@ -92,7 +92,7 @@ export default function CreateScreen() {
             const mediaUrls = [];
             for (const item of media) {
                 const isVideo = item.type === 'video';
-                const uploaded = await uploadToCloudinary(item.uri, isVideo ? 'video' : 'image');
+                const uploaded = await uploadToCloudinary(item, isVideo ? 'video' : 'image');
                 mediaUrls.push(uploaded.url);
             }
 
@@ -140,7 +140,7 @@ export default function CreateScreen() {
             setLoading(true);
 
             const isVideo = media[0].type === 'video';
-            const uploaded = await uploadToCloudinary(media[0].uri, isVideo ? 'video' : 'image');
+            const uploaded = await uploadToCloudinary(media[0], isVideo ? 'video' : 'image');
 
             await createStory({
                 authorId: user.uid,

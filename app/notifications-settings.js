@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +20,18 @@ export default function NotificationsSettingsScreen() {
         followers: userProfile?.settings?.notifyFollowers !== false,
         stories: userProfile?.settings?.notifyStories !== false,
     });
+
+    useEffect(() => {
+        if (userProfile) {
+            setSettings({
+                messages: userProfile.settings?.notifications !== false,
+                likes: userProfile.settings?.notifyLikes !== false,
+                comments: userProfile.settings?.notifyComments !== false,
+                followers: userProfile.settings?.notifyFollowers !== false,
+                stories: userProfile.settings?.notifyStories !== false,
+            });
+        }
+    }, [userProfile]);
 
     const toggleSetting = async (key) => {
         const updated = { ...settings, [key]: !settings[key] };

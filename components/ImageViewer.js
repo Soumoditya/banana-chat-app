@@ -1,22 +1,54 @@
-import { useState } from 'react';
-import { View, StyleSheet, Modal, TouchableOpacity, Image, Dimensions, StatusBar } from 'react-native';
+import { useState, useRef } from 'react';
+import { View, StyleSheet, Modal, TouchableOpacity, Dimensions, StatusBar, Animated } from 'react-native';
+import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function ImageViewer({ visible, imageUrl, onClose }) {
+    const scale = useRef(new Animated.Value(1)).current;
+
     if (!imageUrl) return null;
 
+    const onPinchEvent = Animated.event(
+        [{ nativeEvent: { scale: scale } }],
+        { useNativeDriver: true }
+    );
+
+    const onPinchStateChange = event => {
+        if (event.nativeEvent.oldState === State.ACTIVE) {
+            if (event.nativeEvent.scale < 1) {
+                // Bounce back if zoomed out too much
+                Animated.spring(scale, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                }).start();
+            }
+        }
+    };
+
+    const handleClose = () => {
+        scale.setValue(1); // Reset scale
+        onClose();
+    };
+
     return (
-        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose} statusBarTranslucent>
             <View style={styles.container}>
                 <StatusBar backgroundColor="black" barStyle="light-content" />
-                <Image
-                    source={{ uri: imageUrl }}
-                    style={styles.image}
-                    resizeMode="contain"
-                />
-                <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+                
+                <PinchGestureHandler
+                    onGestureEvent={onPinchEvent}
+                    onHandlerStateChange={onPinchStateChange}
+                >
+                    <Animated.Image
+                        source={{ uri: imageUrl }}
+                        style={[styles.image, { transform: [{ scale: scale }] }]}
+                        resizeMode="contain"
+                    />
+                </PinchGestureHandler>
+
+                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} activeOpacity={0.7}>
                     <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>
             </View>

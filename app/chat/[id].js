@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Swipeable } from 'react-native-gesture-handler';
 import {
     View,
     Text,
@@ -43,6 +44,7 @@ import { Audio, Video, ResizeMode } from 'expo-av';
 import EmojiPicker from '../../components/EmojiPicker';
 import GiphyPicker from '../../components/GiphyPicker';
 import ImageViewer from '../../components/ImageViewer';
+import VideoViewer from '../../components/VideoViewer';
 
 export default function ChatScreen() {
     const { id: chatId } = useLocalSearchParams();
@@ -62,6 +64,7 @@ export default function ChatScreen() {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [viewerImage, setViewerImage] = useState(null);
+    const [viewerVideo, setViewerVideo] = useState(null);
     const recordingRef = useRef(null);
     const recordingTimerRef = useRef(null);
     const flatListRef = useRef(null);
@@ -370,7 +373,22 @@ export default function ChatScreen() {
         return (
             <View>
                 {showDateHeader && <Text style={styles.dateHeader}>{formatDateHeader(msg.timestamp)}</Text>}
-                <TouchableOpacity
+                <Swipeable
+                    ref={ref => { msg.swipeRef = ref; }}
+                    renderLeftActions={() => (
+                        <View style={{ justifyContent: 'center', width: 60, alignItems: 'center' }}>
+                            <View style={{ backgroundColor: Colors.surfaceLight, borderRadius: 20, padding: 6 }}>
+                                <Ionicons name="arrow-undo" size={20} color={Colors.text} />
+                            </View>
+                        </View>
+                    )}
+                    onSwipeableLeftOpen={() => {
+                        setReplyTo(msg);
+                        setTimeout(() => msg.swipeRef?.close(), 0);
+                    }}
+                    overshootLeft={false}
+                >
+                    <TouchableOpacity
                     style={[styles.msgRow, isMe && styles.msgRowMe, isSelected && styles.msgSelected]}
                     onLongPress={() => handleMsgLongPress(msg)}
                     onPress={() => selectMode ? toggleSelect(msg.id) : null}
@@ -410,13 +428,18 @@ export default function ChatScreen() {
 
                         {/* Video with expo-av */}
                         {msg.type === MESSAGE_TYPES.VIDEO && msg.media && (
-                            <Video
-                                source={{ uri: msg.media }}
-                                style={[styles.msgMedia, { aspectRatio: 16/9 }]}
-                                useNativeControls
-                                resizeMode={ResizeMode.CONTAIN}
-                                shouldPlay={false}
-                            />
+                            <TouchableOpacity onPress={() => setViewerVideo(msg.media)} activeOpacity={0.9} style={{ position: 'relative' }}>
+                                <Video
+                                    source={{ uri: msg.media }}
+                                    style={styles.msgMedia}
+                                    resizeMode={ResizeMode.COVER}
+                                    shouldPlay={false}
+                                    isMuted={true}
+                                />
+                                <View style={[styles.msgMedia, styles.videoOverlay]}>
+                                    <Ionicons name="play-circle" size={54} color="rgba(255,255,255,0.8)" />
+                                </View>
+                            </TouchableOpacity>
                         )}
 
                         {/* GIF */}
@@ -451,6 +474,7 @@ export default function ChatScreen() {
                         </View>
                     )}
                 </TouchableOpacity>
+                </Swipeable>
 
                 {/* Reaction picker + actions */}
                 {showReactions === msg.id && (
@@ -522,7 +546,9 @@ export default function ChatScreen() {
                             if (otherUser) router.push(`/user/${otherUser.id}`);
                         }}>
                             {otherUser?.avatar ? (
-                                <Image source={{ uri: otherUser.avatar }} style={styles.headerAvatar} />
+                                <TouchableOpacity onPress={() => setViewerImage(otherUser.avatar)}>
+                                    <Image source={{ uri: otherUser.avatar }} style={styles.headerAvatar} />
+                                </TouchableOpacity>
                             ) : (
                                 <View style={[styles.headerAvatar, styles.headerAvatarPlaceholder]}>
                                     <Text style={styles.headerAvatarText}>
@@ -773,7 +799,8 @@ const styles = StyleSheet.create({
     voiceWave: { flexDirection: 'row', alignItems: 'center', gap: 2, flex: 1 },
     voiceBar: { width: 3, backgroundColor: Colors.primary, borderRadius: 2, opacity: 0.7 },
     voiceDuration: { color: Colors.textTertiary, fontSize: FontSize.xs },
-    msgMedia: { width: Dimensions.get('window').width * 0.6, height: Dimensions.get('window').width * 0.5, borderRadius: BorderRadius.md, marginBottom: Spacing.xs },
+    msgMedia: { width: Dimensions.get('window').width * 0.72, height: Dimensions.get('window').width * 0.85, borderRadius: BorderRadius.md, marginBottom: Spacing.xs },
+    videoOverlay: { position: 'absolute', top: 0, left: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' },
     videoPlayOverlay: { position: 'absolute', top: 0, left: 0, width: 260, height: 200, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: BorderRadius.md },
     msgText: { color: Colors.messageReceivedText, fontSize: FontSize.md, lineHeight: 20 },
     msgTextMe: { color: Colors.messageSentText },
