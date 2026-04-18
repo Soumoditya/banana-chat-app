@@ -19,7 +19,7 @@ import {
 import { db } from '../config/firebase';
 import { createNotification } from './notifications';
 
-// Get user profile
+// ─── Profile Reads ───
 export const getUserProfile = async (uid) => {
     const userDoc = await getDoc(doc(db, 'users', uid));
     if (userDoc.exists()) {
@@ -28,7 +28,8 @@ export const getUserProfile = async (uid) => {
     return null;
 };
 
-// Get user by exact username (used for @mentions, password reset)
+// Resolves a username to a profile — cascades through indexed, lowercase,
+// and full-scan strategies to handle legacy users without `usernameLower`.
 export const getUserByUsername = async (username) => {
     try {
         // Try exact match first
@@ -59,7 +60,7 @@ export const getUserByUsername = async (username) => {
     return null;
 };
 
-// Search users by username or display name
+// ─── Search ───
 export const searchUsers = async (searchTerm) => {
     if (!searchTerm || searchTerm.length < 1) return [];
 
@@ -112,7 +113,9 @@ export const searchUsers = async (searchTerm) => {
     return results.slice(0, 30);
 };
 
-// Get suggested users (not currently followed)
+// ─── Discovery ───
+// Surfaces recent users the viewer doesn't already follow.
+// Intentionally simple — avoids a recommendation engine for now.
 export const getSuggestedUsers = async (userId, limitCount = 10) => {
     try {
         const currentUserProfile = await getUserProfile(userId);
@@ -138,7 +141,9 @@ export const getSuggestedUsers = async (userId, limitCount = 10) => {
     }
 };
 
-// Update user profile
+// ─── Profile Writes ───
+// Automatically maintains lowercase copies of username/displayName
+// so prefix search queries work without Firestore composite indexes.
 export const updateUserProfile = async (uid, data) => {
     if (data.username) {
         data.usernameLower = data.username.toLowerCase();
@@ -152,7 +157,7 @@ export const updateUserProfile = async (uid, data) => {
     });
 };
 
-// Follow / Unfollow
+// ─── Social Graph ───
 export const followUser = async (currentUid, targetUid) => {
     await updateDoc(doc(db, 'users', currentUid), {
         following: arrayUnion(targetUid),
@@ -173,7 +178,7 @@ export const unfollowUser = async (currentUid, targetUid) => {
     });
 };
 
-// Friend management
+// Bidirectional — both users get the friend link atomically.
 export const addFriend = async (currentUid, targetUid) => {
     await updateDoc(doc(db, 'users', currentUid), {
         friends: arrayUnion(targetUid),
@@ -194,7 +199,7 @@ export const removeFriend = async (currentUid, targetUid) => {
     });
 };
 
-// Close friend management
+// Unidirectional — only the initiator's close-friends list is modified.
 export const addCloseFriend = async (currentUid, targetUid) => {
     await updateDoc(doc(db, 'users', currentUid), {
         closeFriends: arrayUnion(targetUid),
@@ -207,7 +212,7 @@ export const removeCloseFriend = async (currentUid, targetUid) => {
     });
 };
 
-// Block/Unblock
+// Blocking also severs friend/follow links to prevent stale social data.
 export const blockUser = async (currentUid, targetUid) => {
     await updateDoc(doc(db, 'users', currentUid), {
         blockedUsers: arrayUnion(targetUid),
@@ -223,7 +228,8 @@ export const unblockUser = async (currentUid, targetUid) => {
     });
 };
 
-// Get followers / following list
+// ─── Social Lists ───
+// Capped at 50 to avoid excessive reads on large follower lists.
 export const getFollowers = async (uid) => {
     const userDoc = await getDoc(doc(db, 'users', uid));
     if (!userDoc.exists()) return [];
@@ -250,7 +256,7 @@ export const getFollowing = async (uid) => {
     return profiles;
 };
 
-// Subscribe to user profile changes
+// ─── Real-time Subscriptions ───
 export const subscribeToUserProfile = (uid, callback) => {
     return onSnapshot(doc(db, 'users', uid), (snapshot) => {
         if (snapshot.exists()) {
@@ -259,7 +265,7 @@ export const subscribeToUserProfile = (uid, callback) => {
     });
 };
 
-// Chat Preferences
+// ─── Chat Preferences ───
 export const pinChat = async (uid, chatId) => {
     await updateDoc(doc(db, 'users', uid), {
         pinnedChats: arrayUnion(chatId),

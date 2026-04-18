@@ -22,7 +22,7 @@ import { generateId } from '../utils/helpers';
 import { getResharesByUser } from './reshares';
 import { createNotification } from './notifications';
 
-// Create a post
+// ─── Post CRUD ───
 export const createPost = async (postData) => {
     const postId = generateId();
     const post = {
@@ -49,7 +49,9 @@ export const createPost = async (postData) => {
     return { id: postId, ...post };
 };
 
-// Get feed posts — uses simple queries to avoid needing Firestore composite indexes
+// ─── Feed Queries ───
+// Uses simple single-field queries and filters client-side to avoid
+// needing Firestore composite indexes (which require manual creation).
 export const getFeedPosts = async (filter = 'all', currentUser = null, lastPost = null, pageSize = 20) => {
     let reshares = [];
 
@@ -146,7 +148,7 @@ export const getPost = async (postId) => {
     return null;
 };
 
-// Get user's posts
+// Same single-field query strategy — filter archived/deleted client-side.
 export const getUserPosts = async (uid, includeArchived = false) => {
     try {
         // ONLY where — NO orderBy (different field = needs composite index)
@@ -175,7 +177,9 @@ export const getUserPosts = async (uid, includeArchived = false) => {
     }
 };
 
-// Upvote post
+// ─── Voting ───
+// Toggle semantics: calling upvote on an already-upvoted post removes it.
+// Mutually exclusive with downvote — can't have both simultaneously.
 export const upvotePost = async (postId, uid) => {
     const postRef = doc(db, 'posts', postId);
     const postDoc = await getDoc(postRef);
@@ -254,7 +258,7 @@ export const addPostReaction = async (postId, uid, emoji) => {
     await updateDoc(postRef, updates);
 };
 
-// Archive / Unarchive post
+// ─── Archive & Delete ───
 export const archivePost = async (postId) => {
     await updateDoc(doc(db, 'posts', postId), { archived: true });
 };
@@ -263,7 +267,8 @@ export const unarchivePost = async (postId) => {
     await updateDoc(doc(db, 'posts', postId), { archived: false });
 };
 
-// Soft delete post (moves to recently deleted)
+// Soft-deletes post: flags it in-place AND copies to `recently_deleted`
+// for 30-day recovery. Dual storage lets the trash UI work independently.
 export const softDeletePost = async (postId) => {
     // Get the post data first
     const postRef = doc(db, 'posts', postId);
@@ -397,7 +402,7 @@ export const searchPosts = async (searchTerm) => {
     }
 };
 
-// COMMENTS
+// ─── Comments ───
 export const addComment = async (postId, commentData) => {
     const commentId = generateId();
     const comment = {
@@ -509,7 +514,9 @@ export const downvoteComment = async (postId, commentId, uid) => {
     await updateDoc(commentRef, updates);
 };
 
-// Save / Unsave post
+// ─── Bookmarks ───
+// Saved posts live on the user doc (not the post) so users can
+// bookmark without write access to someone else's post.
 export const savePost = async (postId, uid) => {
     const userRef = doc(db, 'users', uid);
     await updateDoc(userRef, {
@@ -582,7 +589,9 @@ export const getSpotlightPosts = async (uid) => {
     }
 };
 
-// Get explore posts (powered by Hotness algorithm)
+// ─── Explore (Hotness Ranking) ───
+// Reddit-style hot ranking: Score = Engagement / Age^1.5
+// Fetches a wide pool then ranks client-side for zero-index setup.
 export const getExplorePosts = async (pageSize = 30) => {
     try {
     // 1. Fetch a wider pool of recent posts — simple query
