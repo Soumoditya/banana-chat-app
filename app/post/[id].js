@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -11,23 +11,46 @@ import {
     Alert,
     Modal,
     Share,
+    ActivityIndicator,
+    Dimensions,
+    Linking,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { Video, ResizeMode, Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePremium } from '../../contexts/PremiumContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import {
     getPost, upvotePost, downvotePost, addComment, getComments,
     upvoteComment, downvoteComment, savePost, unsavePost, getUpvoters, incrementShareCount,
 } from '../../services/posts';
-import { getUserProfile } from '../../services/users';
+import { createReshare } from '../../services/reshares';
+import { getUserProfile, searchUsers } from '../../services/users';
+import { createNotification } from '../../services/notifications';
 import { formatTime, formatCount, getInitials } from '../../utils/helpers';
 import { COMMENT_FILTERS, REACTIONS } from '../../utils/constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { uploadToCloudinary } from '../../config/cloudinary';
+import ImageViewer from '../../components/ImageViewer';
+import VideoViewer from '../../components/VideoViewer';
+import AudioWavePlayer from '../../components/AudioWavePlayer';
+import PremiumBadge from '../../components/PremiumBadge';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function PostDetailScreen() {
+    const carouselScrollRef = useRef(null);
+    const [activeMediaIndex, setActiveMediaIndex] = useState(0);
     const { id: postId } = useLocalSearchParams();
     const { user, userProfile } = useAuth();
+    const { themedColors: C, activeFont, downloadMediaEnabled } = usePremium();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [post, setPost] = useState(null);
@@ -40,6 +63,25 @@ export default function PostDetailScreen() {
     const [showLikesModal, setShowLikesModal] = useState(false);
     const [likers, setLikers] = useState([]);
     const [likersProfiles, setLikersProfiles] = useState([]);
+    const [commentMedia, setCommentMedia] = useState(null);
+    const [uploadingComment, setUploadingComment] = useState(false);
+    // Media viewers
+    const [viewerImage, setViewerImage] = useState(null);
+    const [viewerVideo, setViewerVideo] = useState(null);
+    // Comment video mute state
+    const [mutedCommentVideos, setMutedCommentVideos] = useState({});
+    // Audio recording for comments
+    const [isRecordingComment, setIsRecordingComment] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const commentRecordingRef = useRef(null);
+    const commentRecTimerRef = useRef(null);
+    // Attachment menu
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
+    // @ mention autosuggest
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionResults, setMentionResults] = useState([]);
+    const [showMentions, setShowMentions] = useState(false);
+    const commentInputRef = useRef(null);
 
     useEffect(() => { loadPost(); }, [postId]);
     useEffect(() => { loadComments(); }, [commentFilter]);
@@ -55,39 +97,176 @@ export default function PostDetailScreen() {
 
     const loadComments = async () => {
         const cmts = await getComments(postId, commentFilter);
-        setComments(cmts);
-        const authorMap = { ...commentAuthors };
-        for (const c of cmts) {
-            if (!authorMap[c.authorId]) {
-                const profile = await getUserProfile(c.authorId);
-                if (profile) authorMap[c.authorId] = profile;
+        const map = {};
+        const roots = [];
+        cmts.forEach(c => map[c.id] = { ...c, children: [] });
+        cmts.forEach(c => {
+            if (c.parentCommentId && map[c.parentCommentId]) {
+                map[c.parentCommentId].children.push(map[c.id]);
+            } else {
+                roots.push(map[c.id]);
             }
-        }
+        });
+        setComments(roots);
+
+        const authorMap = { ...commentAuthors };
+        const uniqueIds = [...new Set(cmts.map(c => c.authorId))];
+        const entries = await Promise.all(
+            uniqueIds.filter(id => !authorMap[id]).map(async (id) => {
+                const profile = await getUserProfile(id);
+                return profile ? [id, profile] : null;
+            })
+        );
+        entries.filter(Boolean).forEach(([id, profile]) => { authorMap[id] = profile; });
         setCommentAuthors(authorMap);
     };
 
+    // ─── Media picking for comments ───
+    const pickCommentMedia = async () => {
+        setShowAttachMenu(false);
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images', 'videos'],
+            quality: 0.8,
+        });
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+            const isVideo = asset.type === 'video';
+            setCommentMedia({ ...asset, mediaType: isVideo ? 'video' : 'image' });
+        }
+    };
+
+    const startCommentAudioRecording = async () => {
+        setShowAttachMenu(false);
+        try {
+            const { status } = await Audio.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Please allow microphone access');
+                return;
+            }
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+            const recording = new Audio.Recording();
+            await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+            await recording.startAsync();
+            commentRecordingRef.current = recording;
+            setIsRecordingComment(true);
+            setRecordingDuration(0);
+            commentRecTimerRef.current = setInterval(() => {
+                setRecordingDuration(d => d + 1);
+            }, 1000);
+        } catch (err) {
+            Alert.alert('Error', 'Failed to start recording: ' + err.message);
+        }
+    };
+
+    const stopCommentAudioRecording = async () => {
+        clearInterval(commentRecTimerRef.current);
+        setIsRecordingComment(false);
+        if (!commentRecordingRef.current) return;
+        try {
+            await commentRecordingRef.current.stopAndUnloadAsync();
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+            const uri = commentRecordingRef.current.getURI();
+            commentRecordingRef.current = null;
+            if (uri) {
+                setCommentMedia({ uri, mediaType: 'audio', duration: recordingDuration });
+            }
+        } catch (err) {
+            commentRecordingRef.current = null;
+        }
+    };
+
+    const cancelCommentAudioRecording = async () => {
+        clearInterval(commentRecTimerRef.current);
+        setIsRecordingComment(false);
+        if (commentRecordingRef.current) {
+            try { await commentRecordingRef.current.stopAndUnloadAsync(); } catch {}
+            commentRecordingRef.current = null;
+        }
+    };
+
+    // ─── @ Mention autosuggest ───
+    const handleCommentTextChange = (text) => {
+        setCommentText(text);
+        // Detect @mention
+        const cursorMatch = text.match(/@(\w*)$/);
+        if (cursorMatch && cursorMatch[1].length >= 1) {
+            setMentionQuery(cursorMatch[1]);
+            searchMentionUsers(cursorMatch[1]);
+        } else {
+            setShowMentions(false);
+            setMentionResults([]);
+        }
+    };
+
+    const searchMentionUsers = async (q) => {
+        try {
+            const users = await searchUsers(q);
+            const filtered = users.filter(u => u.id !== user?.uid).slice(0, 6);
+            setMentionResults(filtered);
+            setShowMentions(filtered.length > 0);
+        } catch {
+            setShowMentions(false);
+        }
+    };
+
+    const insertMention = (mentionUser) => {
+        const newText = commentText.replace(/@\w*$/, `@${mentionUser.username} `);
+        setCommentText(newText);
+        setShowMentions(false);
+        setMentionResults([]);
+    };
+
+    // ─── Submit comment ───
     const handleAddComment = async () => {
-        if (!commentText.trim()) return;
+        if (!commentText.trim() && !commentMedia) return;
+        setUploadingComment(true);
+        let mediaUrl = null;
+        let mediaType = null;
+        let duration = null;
+
+        if (commentMedia) {
+            mediaType = commentMedia.mediaType || (commentMedia.type === 'video' ? 'video' : 'image');
+            const resourceType = mediaType === 'image' ? 'image' : 'video';
+            const uploaded = await uploadToCloudinary(commentMedia.uri || commentMedia, resourceType);
+            mediaUrl = uploaded.url;
+            duration = commentMedia.duration || uploaded.duration || null;
+        }
+
         await addComment(postId, {
             authorId: user.uid,
             text: commentText.trim(),
+            mediaUrl,
+            mediaType,
+            duration,
             parentCommentId: replyTo?.id || null,
         });
+
+        // Send mention notifications
+        const mentions = commentText.match(/@(\w+)/g);
+        if (mentions) {
+            for (const mention of mentions) {
+                const username = mention.substring(1);
+                // Find user by username from comment authors or search
+                const mentionedProfile = Object.values(commentAuthors).find(
+                    p => p.username?.toLowerCase() === username.toLowerCase()
+                );
+                if (mentionedProfile && mentionedProfile.id !== user.uid) {
+                    createNotification(mentionedProfile.id, user.uid, 'mention', postId);
+                }
+            }
+        }
+
         setCommentText('');
+        setCommentMedia(null);
         setReplyTo(null);
+        setUploadingComment(false);
+        setShowMentions(false);
         loadComments();
         loadPost();
     };
 
-    const handleUpvote = async () => {
-        await upvotePost(postId, user.uid);
-        loadPost();
-    };
-
-    const handleDownvote = async () => {
-        await downvotePost(postId, user.uid);
-        loadPost();
-    };
+    const handleUpvote = async () => { await upvotePost(postId, user.uid); loadPost(); };
+    const handleDownvote = async () => { await downvotePost(postId, user.uid); loadPost(); };
 
     const handleSave = async () => {
         const isSaved = userProfile?.savedPosts?.includes(postId);
@@ -96,11 +275,27 @@ export default function PostDetailScreen() {
     };
 
     const handleShare = async () => {
-        try {
-            await Share.share({ message: `Check out this post on Banana Chat! 🍌` });
-            await incrementShareCount(postId);
-            loadPost();
-        } catch { }
+        Alert.alert("Share Post", "What would you like to do?", [
+            { text: "Send to Chat", onPress: () => router.push(`/share-post/${postId}`) },
+            {
+                text: "Share via...", onPress: async () => {
+                    try {
+                        let shareMsg = post?.content || '';
+                        shareMsg = shareMsg ? `${shareMsg}\n\n` : '';
+                        shareMsg += `Shared from Banana Chat 🍌`;
+                        const shareOpts = { message: shareMsg };
+                        if (post?.media?.[0]) {
+                            const mediaUri = typeof post.media[0] === 'string' ? post.media[0] : post.media[0]?.uri;
+                            if (mediaUri) shareOpts.url = mediaUri;
+                        }
+                        await Share.share(shareOpts);
+                        await incrementShareCount(postId);
+                        loadPost();
+                    } catch {}
+                }
+            },
+            { text: "Cancel", style: "cancel" }
+        ]);
     };
 
     const showLikers = async () => {
@@ -115,14 +310,15 @@ export default function PostDetailScreen() {
         setShowLikesModal(true);
     };
 
-    // Parse @mentions in text
-    const renderTextWithMentions = (text) => {
+    const renderTextWithMentions = (text, selectable = false) => {
         if (!text) return null;
-        const parts = text.split(/(@\w+)/g);
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const combined = /(@\w+|https?:\/\/[^\s]+)/g;
+        const parts = text.split(combined);
         return (
-            <Text style={styles.postContent}>
+            <Text style={styles.postContent} selectable={selectable}>
                 {parts.map((part, i) => {
-                    if (part.startsWith('@')) {
+                    if (part && part.startsWith('@')) {
                         return (
                             <Text key={i} style={styles.mentionText} onPress={() => {
                                 const username = part.substring(1);
@@ -132,9 +328,146 @@ export default function PostDetailScreen() {
                             </Text>
                         );
                     }
+                    if (part && part.match(urlRegex)) {
+                        return (
+                            <Text key={i} style={{ color: '#4A90D9', textDecorationLine: 'underline' }} onPress={() => Linking.openURL(part)}>
+                                {part}
+                            </Text>
+                        );
+                    }
                     return <Text key={i}>{part}</Text>;
                 })}
             </Text>
+        );
+    };
+
+    // ─── Comment media rendering ───
+    const renderCommentMedia = (comment) => {
+        if (!comment.mediaUrl) return null;
+
+        // Image
+        if (comment.mediaType === 'image' || (!comment.mediaType && !comment.mediaUrl.match(/\.(mp4|mov|mp3|m4a|wav|ogg|webm)/i))) {
+            return (
+                <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
+                    <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
+                    <View style={styles.commentMediaZoomHint}>
+                        <Ionicons name="expand-outline" size={14} color="#fff" />
+                    </View>
+                </TouchableOpacity>
+            );
+        }
+
+        // Video
+        if (comment.mediaType === 'video') {
+            const isMuted = mutedCommentVideos[comment.id] !== false;
+            return (
+                <View style={styles.commentVideoContainer}>
+                    <TouchableOpacity
+                        onPress={() => setViewerVideo(comment.mediaUrl)}
+                        activeOpacity={0.9}
+                    >
+                        <Video
+                            source={{ uri: comment.mediaUrl }}
+                            style={styles.commentMediaVideo}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay={false}
+                            isMuted={isMuted}
+                            isLooping
+                        />
+                        <View style={styles.commentVideoPlayOverlay}>
+                            <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.85)" />
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.commentVideoMuteBtn}
+                        onPress={() => setMutedCommentVideos(prev => ({ ...prev, [comment.id]: !isMuted }))}
+                    >
+                        <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+
+        // Audio
+        if (comment.mediaType === 'audio') {
+            return (
+                <View style={styles.commentAudioContainer}>
+                    <AudioWavePlayer
+                        uri={comment.mediaUrl}
+                        duration={comment.duration || 0}
+                        compact
+                    />
+                </View>
+            );
+        }
+
+        // Fallback — show as image
+        return (
+            <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
+                <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
+            </TouchableOpacity>
+        );
+    };
+
+    // ─── Render comment node (with OP badge) ───
+    const renderCommentNode = (comment, depth = 0) => {
+        const cAuthor = commentAuthors[comment.authorId];
+        const isOP = post && comment.authorId === post.authorId;
+        return (
+            <View key={comment.id} style={{ marginLeft: depth * 16, borderLeftWidth: depth > 0 ? 1 : 0, borderColor: Colors.border, paddingLeft: depth > 0 ? 8 : 0, marginTop: 12 }}>
+                <View style={styles.commentRow}>
+                    <TouchableOpacity onPress={() => router.push(`/user/${comment.authorId}`)}>
+                        {cAuthor?.avatar ? (
+                            <Image source={{ uri: cAuthor.avatar }} style={styles.commentAvatar} />
+                        ) : (
+                            <View style={[styles.commentAvatar, styles.avatarPlaceholder]}>
+                                <Text style={styles.commentAvatarInitials}>{getInitials(cAuthor?.displayName)}</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                    <View style={styles.commentContent}>
+                        <View style={styles.commentTop}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                                <Text style={styles.commentAuthor}>{cAuthor?.displayName || 'User'}</Text>
+                                <PremiumBadge profile={cAuthor} size={12} />
+                            </View>
+                            {isOP && (
+                                <View style={styles.opBadge}>
+                                    <Text style={styles.opBadgeText}>OP</Text>
+                                </View>
+                            )}
+                            <Text style={styles.commentTime}>
+                                {formatTime(comment.createdAt?.seconds ? comment.createdAt.seconds * 1000 : Date.now())}
+                            </Text>
+                        </View>
+                        <TouchableOpacity onLongPress={async () => {
+                            try { await Clipboard.setStringAsync(comment.text || ''); Alert.alert('Copied!'); } catch {}
+                        }}>
+                            {renderTextWithMentions(comment.text, true)}
+                        </TouchableOpacity>
+                        {renderCommentMedia(comment)}
+                        <View style={styles.commentActions}>
+                            <TouchableOpacity style={styles.commentVote} onPress={() => { upvoteComment(postId, comment.id, user.uid); loadComments(); }}>
+                                <Ionicons name="arrow-up" size={16} color={comment.upvotedBy?.includes(user?.uid) ? Colors.upvote : Colors.textTertiary} />
+                            </TouchableOpacity>
+                            <Text style={[styles.commentVoteCount, (comment.upvotes - comment.downvotes) > 0 && { color: Colors.upvote }]}>
+                                {(comment.upvotes || 0) - (comment.downvotes || 0)}
+                            </Text>
+                            <TouchableOpacity onPress={() => { downvoteComment(postId, comment.id, user.uid); loadComments(); }}>
+                                <Ionicons name="arrow-down" size={16} color={comment.downvotedBy?.includes(user?.uid) ? Colors.downvote : Colors.textTertiary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setReplyTo(comment)} style={{ marginLeft: Spacing.lg }}>
+                                <Text style={styles.replyBtn}>Reply</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+                {comment.children && comment.children.length > 0 && (
+                    <View style={{ marginTop: 4 }}>
+                        {comment.children.map(child => renderCommentNode(child, depth + 1))}
+                    </View>
+                )}
+            </View>
         );
     };
 
@@ -158,7 +491,7 @@ export default function PostDetailScreen() {
     }
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
             {/* Header */}
             <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
                 <TouchableOpacity onPress={() => router.back()}>
@@ -187,7 +520,10 @@ export default function PostDetailScreen() {
                                     </View>
                                 )}
                                 <View>
-                                    <Text style={styles.authorName}>{author?.displayName}</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <Text style={styles.authorName}>{author?.displayName}</Text>
+                                        <PremiumBadge profile={author} size={14} />
+                                    </View>
                                     <Text style={styles.postTime}>@{author?.username} · {formatTime(post.createdAt?.seconds ? post.createdAt.seconds * 1000 : Date.now())}</Text>
                                 </View>
                             </TouchableOpacity>
@@ -200,14 +536,75 @@ export default function PostDetailScreen() {
                                 </View>
                             )}
 
-                            {post.content ? renderTextWithMentions(post.content) : null}
+                            {post.content ? renderTextWithMentions(post.content, true) : null}
 
                             {post.media?.length > 0 && (
-                                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
-                                    {post.media.map((url, i) => (
-                                        <Image key={i} source={{ uri: url }} style={styles.postImage} resizeMode="cover" />
-                                    ))}
-                                </ScrollView>
+                                <View>
+                                    <ScrollView
+                                        ref={carouselScrollRef}
+                                        horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+                                        onMomentumScrollEnd={(e) => {
+                                            const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                                            setActiveMediaIndex(idx);
+                                        }}
+                                    >
+                                        {post.media.map((item, i) => {
+                                            const uri = typeof item === 'string' ? item : item?.uri;
+                                            const isVideo = (typeof item !== 'string' && item?.type === 'video') ||
+                                                            (uri && /\.(mp4|mov|avi)$/i.test(uri));
+                                            if (isVideo) {
+                                                return (
+                                                    <Video key={i} source={{ uri }} style={styles.postImage}
+                                                        resizeMode={ResizeMode.COVER} shouldPlay={i === activeMediaIndex}
+                                                        isLooping useNativeControls
+                                                    />
+                                                );
+                                            }
+                                            return <Image key={i} source={{ uri }} style={styles.postImage} resizeMode="cover" />;
+                                        })}
+                                    </ScrollView>
+                                    {post.media.length > 1 && (
+                                        <View style={styles.paginationDots}>
+                                            {post.media.map((_, i) => (
+                                                <View key={i} style={[styles.paginationDot, i === activeMediaIndex && styles.paginationDotActive]} />
+                                            ))}
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* Download media for premium users */}
+                            {downloadMediaEnabled && post.media?.length > 0 && (
+                                <TouchableOpacity
+                                    style={{
+                                        flexDirection: 'row', alignItems: 'center', gap: 6,
+                                        paddingVertical: 8, paddingHorizontal: 12,
+                                        backgroundColor: C.primarySurface || Colors.primarySurface,
+                                        borderRadius: 10, alignSelf: 'flex-start', marginTop: 8,
+                                    }}
+                                    onPress={async () => {
+                                        try {
+                                            const { status } = await MediaLibrary.requestPermissionsAsync();
+                                            if (status !== 'granted') {
+                                                Alert.alert('Permission needed', 'Allow media library access to save files.');
+                                                return;
+                                            }
+                                            const item = post.media[activeMediaIndex] || post.media[0];
+                                            const uri = typeof item === 'string' ? item : item?.uri;
+                                            if (!uri) return;
+                                            const filename = uri.split('/').pop() || `banana_${Date.now()}.jpg`;
+                                            const localUri = FileSystem.documentDirectory + filename;
+                                            const { uri: downloadedUri } = await FileSystem.downloadAsync(uri, localUri);
+                                            await MediaLibrary.saveToLibraryAsync(downloadedUri);
+                                            Alert.alert('✅ Saved', 'Media saved to your gallery!');
+                                        } catch (err) {
+                                            Alert.alert('Download failed', err.message);
+                                        }
+                                    }}
+                                >
+                                    <Ionicons name="download-outline" size={18} color={C.primary} />
+                                    <Text style={{ color: C.primary, fontSize: 13, fontWeight: '600' }}>Save to Gallery</Text>
+                                </TouchableOpacity>
                             )}
 
                             {/* Post Actions */}
@@ -243,7 +640,6 @@ export default function PostDetailScreen() {
                                 </TouchableOpacity>
                             </View>
 
-                            {/* Liked by / Upvoters */}
                             {(post.upvotes || 0) > 0 && (
                                 <TouchableOpacity style={styles.likedByRow} onPress={showLikers}>
                                     <Text style={styles.likedByText}>👍 {formatCount(post.upvotes || 0)} upvotes</Text>
@@ -271,53 +667,7 @@ export default function PostDetailScreen() {
                         </View>
                     </View>
                 )}
-                renderItem={({ item: comment }) => {
-                    const cAuthor = commentAuthors[comment.authorId];
-                    return (
-                        <View style={[styles.commentItem, comment.parentCommentId && styles.replyItem]}>
-                            {comment.parentCommentId && <View style={styles.threadLine} />}
-                            <View style={styles.commentRow}>
-                                <TouchableOpacity onPress={() => router.push(`/user/${comment.authorId}`)}>
-                                    {cAuthor?.avatar ? (
-                                        <Image source={{ uri: cAuthor.avatar }} style={styles.commentAvatar} />
-                                    ) : (
-                                        <View style={[styles.commentAvatar, styles.avatarPlaceholder]}>
-                                            <Text style={styles.commentAvatarInitials}>{getInitials(cAuthor?.displayName)}</Text>
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                                <View style={styles.commentContent}>
-                                    <View style={styles.commentTop}>
-                                        <Text style={styles.commentAuthor}>{cAuthor?.displayName || 'User'}</Text>
-                                        <Text style={styles.commentTime}>
-                                            {formatTime(comment.createdAt?.seconds ? comment.createdAt.seconds * 1000 : Date.now())}
-                                        </Text>
-                                    </View>
-                                    {renderTextWithMentions(comment.text)}
-                                    <View style={styles.commentActions}>
-                                        <TouchableOpacity
-                                            style={styles.commentVote}
-                                            onPress={() => { upvoteComment(postId, comment.id, user.uid); loadComments(); }}
-                                        >
-                                            <Ionicons name="arrow-up" size={16} color={comment.upvotedBy?.includes(user?.uid) ? Colors.upvote : Colors.textTertiary} />
-                                        </TouchableOpacity>
-                                        <Text style={[styles.commentVoteCount, (comment.upvotes - comment.downvotes) > 0 && { color: Colors.upvote }]}>
-                                            {(comment.upvotes || 0) - (comment.downvotes || 0)}
-                                        </Text>
-                                        <TouchableOpacity
-                                            onPress={() => { downvoteComment(postId, comment.id, user.uid); loadComments(); }}
-                                        >
-                                            <Ionicons name="arrow-down" size={16} color={comment.downvotedBy?.includes(user?.uid) ? Colors.downvote : Colors.textTertiary} />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => setReplyTo(comment)} style={{ marginLeft: Spacing.lg }}>
-                                            <Text style={styles.replyBtn}>Reply</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-                            </View>
-                        </View>
-                    );
-                }}
+                renderItem={({ item: comment }) => renderCommentNode(comment, 0)}
                 ListEmptyComponent={() => (
                     <View style={styles.emptyComments}>
                         <Text style={styles.emptyText}>No comments yet. Be the first!</Text>
@@ -325,6 +675,27 @@ export default function PostDetailScreen() {
                 )}
                 contentContainerStyle={styles.commentsList}
             />
+
+            {/* @ Mention autosuggest dropdown */}
+            {showMentions && mentionResults.length > 0 && (
+                <View style={styles.mentionDropdown}>
+                    {mentionResults.map(u => (
+                        <TouchableOpacity key={u.id} style={styles.mentionItem} onPress={() => insertMention(u)} activeOpacity={0.7}>
+                            {u.avatar ? (
+                                <Image source={{ uri: u.avatar }} style={styles.mentionAvatar} />
+                            ) : (
+                                <View style={[styles.mentionAvatar, styles.mentionAvatarPlaceholder]}>
+                                    <Text style={styles.mentionAvatarText}>{getInitials(u.displayName)}</Text>
+                                </View>
+                            )}
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.mentionName}>{u.displayName}</Text>
+                                <Text style={styles.mentionUsername}>@{u.username}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
 
             {/* Comment input */}
             <View style={[styles.commentInputBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
@@ -338,22 +709,100 @@ export default function PostDetailScreen() {
                         </TouchableOpacity>
                     </View>
                 )}
-                <View style={styles.commentInputRow}>
-                    <TextInput
-                        style={styles.commentInput}
-                        placeholder="Add a comment..."
-                        placeholderTextColor={Colors.textTertiary}
-                        value={commentText}
-                        onChangeText={setCommentText}
-                    />
-                    <TouchableOpacity
-                        style={styles.sendBtn}
-                        onPress={handleAddComment}
-                        disabled={!commentText.trim()}
-                    >
-                        <Ionicons name="send" size={18} color={commentText.trim() ? Colors.primary : Colors.textTertiary} />
-                    </TouchableOpacity>
-                </View>
+
+                {/* Recording indicator */}
+                {isRecordingComment && (
+                    <View style={styles.recordingBar}>
+                        <View style={styles.recordingWave}>
+                            <View style={styles.recordingDot} />
+                            <Text style={styles.recordingTimeText}>
+                                {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
+                            </Text>
+                            {/* Animated recording bars */}
+                            <View style={styles.recordingBars}>
+                                {[...Array(12)].map((_, i) => (
+                                    <View key={i} style={[styles.recBar, { height: 4 + Math.random() * 14, backgroundColor: Colors.error }]} />
+                                ))}
+                            </View>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                            <TouchableOpacity style={styles.cancelRecBtn} onPress={cancelCommentAudioRecording}>
+                                <Ionicons name="close" size={20} color={Colors.error} />
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.sendRecBtn} onPress={stopCommentAudioRecording}>
+                                <Ionicons name="checkmark" size={20} color="#fff" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {!isRecordingComment && (
+                    <View style={styles.commentInputRow}>
+                        {/* Attachment menu button */}
+                        <TouchableOpacity style={{ marginRight: 4 }} onPress={() => setShowAttachMenu(!showAttachMenu)}>
+                            <Ionicons name="add-circle-outline" size={26} color={Colors.textSecondary} />
+                        </TouchableOpacity>
+                        {/* Mic button */}
+                        <TouchableOpacity style={{ marginRight: 4 }} onPress={startCommentAudioRecording}>
+                            <Ionicons name="mic-outline" size={24} color={Colors.textSecondary} />
+                        </TouchableOpacity>
+                        <TextInput
+                            ref={commentInputRef}
+                            style={styles.commentInput}
+                            placeholder="Add a comment..."
+                            placeholderTextColor={Colors.textTertiary}
+                            value={commentText}
+                            onChangeText={handleCommentTextChange}
+                            editable={!uploadingComment}
+                            multiline
+                        />
+                        <TouchableOpacity
+                            style={styles.sendBtn}
+                            onPress={handleAddComment}
+                            disabled={uploadingComment}
+                        >
+                            {uploadingComment ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="send" size={24} color={Colors.primary} />}
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Attachment menu */}
+                {showAttachMenu && (
+                    <View style={styles.attachMenu}>
+                        <TouchableOpacity style={styles.attachMenuItem} onPress={pickCommentMedia}>
+                            <Ionicons name="images" size={22} color={Colors.primary} />
+                            <Text style={styles.attachMenuText}>Media</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachMenuItem} onPress={startCommentAudioRecording}>
+                            <Ionicons name="mic" size={22} color={Colors.error} />
+                            <Text style={styles.attachMenuText}>Audio</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Media preview */}
+                {commentMedia && !isRecordingComment && (
+                    <View style={styles.mediaPreviewRow}>
+                        {commentMedia.mediaType === 'audio' ? (
+                            <View style={styles.audioPreview}>
+                                <Ionicons name="musical-note" size={20} color={Colors.primary} />
+                                <Text style={styles.audioPreviewText}>
+                                    Audio · {commentMedia.duration ? `${Math.floor(commentMedia.duration / 60)}:${String(commentMedia.duration % 60).padStart(2, '0')}` : 'Recorded'}
+                                </Text>
+                            </View>
+                        ) : commentMedia.mediaType === 'video' ? (
+                            <View style={styles.videoPreviewThumb}>
+                                <Ionicons name="videocam" size={20} color={Colors.primary} />
+                                <Text style={styles.audioPreviewText}>Video attached</Text>
+                            </View>
+                        ) : (
+                            <Image source={{ uri: commentMedia.uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                        )}
+                        <TouchableOpacity style={styles.removeMediaBtn} onPress={() => setCommentMedia(null)}>
+                            <Ionicons name="close-circle" size={20} color={Colors.error} />
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
 
             {/* Likes/Upvoters Modal */}
@@ -392,7 +841,12 @@ export default function PostDetailScreen() {
                     </View>
                 </View>
             </Modal>
-        </View>
+
+            {/* Image viewer modal */}
+            <ImageViewer visible={!!viewerImage} imageUrl={viewerImage} onClose={() => setViewerImage(null)} />
+            {/* Video viewer modal */}
+            <VideoViewer visible={!!viewerVideo} videoUrl={viewerVideo} onClose={() => setViewerVideo(null)} />
+        </KeyboardAvoidingView>
     );
 }
 
@@ -417,7 +871,10 @@ const styles = StyleSheet.create({
     taggedText: { color: Colors.primary, fontSize: FontSize.xs },
     postContent: { color: Colors.text, fontSize: FontSize.lg, lineHeight: 24, marginBottom: Spacing.md },
     mentionText: { color: Colors.primary, fontWeight: '600' },
-    postImage: { width: 340, height: 280, borderRadius: BorderRadius.md, marginRight: Spacing.sm },
+    postImage: { width: SCREEN_WIDTH, height: 300 },
+    paginationDots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8, gap: 6 },
+    paginationDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textTertiary },
+    paginationDotActive: { backgroundColor: Colors.primary, width: 18 },
     postActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl, marginTop: Spacing.md },
     voteContainer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.full, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
     voteCount: { color: Colors.text, fontSize: FontSize.md, fontWeight: '600', minWidth: 30, textAlign: 'center' },
@@ -433,28 +890,100 @@ const styles = StyleSheet.create({
     filterText: { color: Colors.textSecondary, fontSize: FontSize.sm },
     filterTextActive: { color: Colors.primary },
     commentsList: { paddingBottom: 100 },
-    commentItem: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
-    replyItem: { paddingLeft: 60 },
-    threadLine: { position: 'absolute', left: 42, top: -8, bottom: '50%', width: 2, backgroundColor: Colors.border, borderRadius: 1 },
     commentRow: { flexDirection: 'row', gap: Spacing.sm },
     commentAvatar: { width: 32, height: 32, borderRadius: 16 },
     commentAvatarInitials: { color: Colors.primary, fontSize: FontSize.sm, fontWeight: 'bold' },
     commentContent: { flex: 1 },
-    commentTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    commentTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
     commentAuthor: { color: Colors.text, fontSize: FontSize.sm, fontWeight: '600' },
     commentTime: { color: Colors.textTertiary, fontSize: FontSize.xs },
+    // OP Badge — Reddit-style flair
+    opBadge: {
+        backgroundColor: '#FFD600',
+        borderRadius: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+    },
+    opBadgeText: {
+        color: '#1A1A1A',
+        fontSize: 10,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
     commentActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.xs },
     commentVote: { padding: 2 },
     commentVoteCount: { color: Colors.textSecondary, fontSize: FontSize.xs, minWidth: 20, textAlign: 'center' },
     replyBtn: { color: Colors.textSecondary, fontSize: FontSize.xs, fontWeight: '600' },
+    // Comment media styles
+    commentMediaImage: { width: 180, height: 180, borderRadius: 10, marginTop: 8 },
+    commentMediaZoomHint: {
+        position: 'absolute', bottom: 12, right: 4,
+        backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
+        padding: 4,
+    },
+    commentVideoContainer: { marginTop: 8, position: 'relative' },
+    commentMediaVideo: { width: 200, height: 160, borderRadius: 10 },
+    commentVideoPlayOverlay: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        justifyContent: 'center', alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 10,
+    },
+    commentVideoMuteBtn: {
+        position: 'absolute', bottom: 8, right: 8,
+        backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12,
+        padding: 4,
+    },
+    commentAudioContainer: {
+        marginTop: 8,
+        backgroundColor: Colors.surfaceLight,
+        borderRadius: BorderRadius.lg,
+        padding: Spacing.sm,
+        maxWidth: 220,
+    },
     emptyComments: { alignItems: 'center', paddingVertical: 40 },
     emptyText: { color: Colors.textTertiary, fontSize: FontSize.md },
+    // Comment input bar
     commentInputBar: { backgroundColor: Colors.surface, borderTopWidth: 0.5, borderTopColor: Colors.border },
     replyPreview: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs, backgroundColor: Colors.surfaceLight },
     replyPreviewText: { color: Colors.primary, fontSize: FontSize.xs },
-    commentInputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, gap: Spacing.sm },
-    commentInput: { flex: 1, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.xl, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, color: Colors.text, fontSize: FontSize.md },
+    commentInputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, gap: 4 },
+    commentInput: { flex: 1, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.xl, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, color: Colors.text, fontSize: FontSize.md, maxHeight: 80 },
     sendBtn: { padding: Spacing.sm },
+    // Attachment menu
+    attachMenu: {
+        flexDirection: 'row', gap: Spacing.lg, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+        borderTopWidth: 0.5, borderTopColor: Colors.border,
+    },
+    attachMenuItem: { alignItems: 'center', gap: 4 },
+    attachMenuText: { color: Colors.textSecondary, fontSize: 10, fontWeight: '600' },
+    // Media preview
+    mediaPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+    audioPreview: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+    audioPreviewText: { color: Colors.text, fontSize: FontSize.sm },
+    videoPreviewThumb: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+    removeMediaBtn: { padding: 4 },
+    // Recording bar
+    recordingBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+    recordingWave: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
+    recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.error },
+    recordingTimeText: { color: Colors.error, fontSize: FontSize.md, fontWeight: '600' },
+    recordingBars: { flexDirection: 'row', alignItems: 'center', gap: 2, flex: 1 },
+    recBar: { width: 3, borderRadius: 2 },
+    cancelRecBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+    sendRecBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+    // @ Mention autosuggest
+    mentionDropdown: {
+        backgroundColor: Colors.surfaceElevated || Colors.surface,
+        borderTopWidth: 1, borderTopColor: Colors.border,
+        maxHeight: 200,
+    },
+    mentionItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+    mentionAvatar: { width: 30, height: 30, borderRadius: 15 },
+    mentionAvatarPlaceholder: { backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+    mentionAvatarText: { color: Colors.primary, fontSize: 10, fontWeight: 'bold' },
+    mentionName: { color: Colors.text, fontSize: FontSize.sm, fontWeight: '600' },
+    mentionUsername: { color: Colors.textSecondary, fontSize: FontSize.xs },
+    // Likes modal
     likesOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     likesModal: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, maxHeight: '60%', paddingBottom: 30 },
     likesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, borderBottomWidth: 0.5, borderBottomColor: Colors.border },

@@ -19,8 +19,12 @@ export default function RecentlyDeletedScreen() {
 
     const loadItems = async () => {
         if (!user) return;
-        const deleted = await getRecentlyDeleted(user.uid);
-        setItems(deleted);
+        try {
+            const deleted = await getRecentlyDeleted(user.uid);
+            setItems(deleted);
+        } catch (err) {
+            console.error('Load deleted error:', err);
+        }
     };
 
     const getDaysRemaining = (item) => {
@@ -32,38 +36,32 @@ export default function RecentlyDeletedScreen() {
     };
 
     const handleRestore = (item) => {
-        Alert.alert('Restore', `Restore this ${item.itemType}?`, [
+        Alert.alert('Restore', `Restore this ${item.itemType || 'item'}?`, [
             { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Restore', onPress: async () => {
-                    await restoreFromTrash(item.id);
-                    loadItems();
-                }
-            },
+            { text: 'Restore', onPress: async () => {
+                await restoreFromTrash(item.id);
+                loadItems();
+            }},
         ]);
     };
 
     const handlePermanentDelete = (item) => {
         Alert.alert('Delete Permanently', 'This cannot be undone.', [
             { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete', style: 'destructive', onPress: async () => {
-                    await permanentlyDelete(item.id);
-                    loadItems();
-                }
-            },
+            { text: 'Delete', style: 'destructive', onPress: async () => {
+                await permanentlyDelete(item.id);
+                loadItems();
+            }},
         ]);
     };
 
     const handleDeleteAll = () => {
         Alert.alert('Delete All Permanently', `Delete all ${items.length} items? This cannot be undone.`, [
             { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete All', style: 'destructive', onPress: async () => {
-                    for (const item of items) await permanentlyDelete(item.id);
-                    setItems([]);
-                }
-            },
+            { text: 'Delete All', style: 'destructive', onPress: async () => {
+                for (const item of items) await permanentlyDelete(item.id);
+                setItems([]);
+            }},
         ]);
     };
 
@@ -93,35 +91,33 @@ export default function RecentlyDeletedScreen() {
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => {
                     const days = getDaysRemaining(item);
+                    const mediaUri = item.media || null;
+                    const isPost = item.itemType === 'post';
+                    const caption = item.content || item.text || '';
+
                     return (
-                        <View style={styles.itemCard}>
-                            <View style={styles.itemRow}>
-                                {item.media ? (
-                                    <Image source={{ uri: item.media }} style={styles.itemThumb} />
-                                ) : (
-                                    <View style={[styles.itemThumb, styles.itemThumbPlaceholder]}>
-                                        <Ionicons
-                                            name={item.itemType === 'story' ? 'images' : 'document-text'}
-                                            size={20}
-                                            color={Colors.textTertiary}
-                                        />
-                                    </View>
-                                )}
-                                <View style={styles.itemInfo}>
-                                    <Text style={styles.itemType}>
-                                        {item.itemType === 'story' ? '📸 Story' : '📝 Post'}
-                                    </Text>
-                                    {item.text ? (
-                                        <Text style={styles.itemText} numberOfLines={1}>{item.text}</Text>
-                                    ) : item.content ? (
-                                        <Text style={styles.itemText} numberOfLines={1}>{item.content}</Text>
-                                    ) : null}
-                                    <Text style={[styles.itemDays, days <= 5 && { color: Colors.error }]}>
-                                        {days} day{days !== 1 ? 's' : ''} remaining
-                                    </Text>
+                        <View style={styles.postCard}>
+                            {/* Header */}
+                            <View style={styles.postHeader}>
+                                <View style={styles.headerLeft}>
+                                    <Ionicons name={isPost ? 'document-text' : 'images'} size={16} color={Colors.error} />
+                                    <Text style={styles.typeLabel}>{isPost ? '📝 Post' : '📸 Story'}</Text>
                                 </View>
+                                <Text style={[styles.daysText, days <= 5 && { color: Colors.error }]}>
+                                    {days} day{days !== 1 ? 's' : ''} left
+                                </Text>
                             </View>
-                            <View style={styles.itemActions}>
+
+                            {/* Caption */}
+                            {caption ? <Text style={styles.caption} selectable numberOfLines={4}>{caption}</Text> : null}
+
+                            {/* Media preview */}
+                            {mediaUri ? (
+                                <Image source={{ uri: mediaUri }} style={styles.mediaPreview} resizeMode="cover" />
+                            ) : null}
+
+                            {/* Actions */}
+                            <View style={styles.actionsRow}>
                                 <TouchableOpacity style={styles.restoreBtn} onPress={() => handleRestore(item)}>
                                     <Ionicons name="refresh" size={16} color={Colors.primary} />
                                     <Text style={styles.restoreBtnText}>Restore</Text>
@@ -141,7 +137,7 @@ export default function RecentlyDeletedScreen() {
                         <Text style={styles.emptySubtitle}>Items you delete will appear here for 30 days</Text>
                     </View>
                 )}
-                contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 40 }}
+                contentContainerStyle={{ paddingBottom: 40 }}
             />
         </View>
     );
@@ -151,46 +147,36 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background },
     header: {
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+        paddingHorizontal: 16, paddingVertical: 12,
         borderBottomWidth: 0.5, borderBottomColor: Colors.border,
     },
-    headerTitle: { fontSize: FontSize.xl, fontWeight: 'bold', color: Colors.text },
-    deleteAllText: { color: Colors.error, fontSize: FontSize.sm, fontWeight: '600' },
+    headerTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.text },
+    deleteAllText: { color: Colors.error, fontSize: 13, fontWeight: '600' },
     infoBanner: {
-        flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-        backgroundColor: Colors.surfaceLight, margin: Spacing.lg,
-        padding: Spacing.md, borderRadius: BorderRadius.md,
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: Colors.surfaceLight, marginHorizontal: 16, marginTop: 12,
+        padding: 12, borderRadius: 10,
     },
-    infoText: { flex: 1, color: Colors.textSecondary, fontSize: FontSize.sm, lineHeight: 18 },
-    itemCard: {
-        backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
-        marginBottom: Spacing.md, overflow: 'hidden',
-        borderWidth: 0.5, borderColor: Colors.border,
-    },
-    itemRow: { flexDirection: 'row', padding: Spacing.md, gap: Spacing.md },
-    itemThumb: { width: 56, height: 56, borderRadius: BorderRadius.sm },
-    itemThumbPlaceholder: {
-        backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center',
-    },
-    itemInfo: { flex: 1, justifyContent: 'center' },
-    itemType: { color: Colors.text, fontSize: FontSize.md, fontWeight: '600' },
-    itemText: { color: Colors.textSecondary, fontSize: FontSize.sm, marginTop: 2 },
-    itemDays: { color: Colors.textTertiary, fontSize: FontSize.xs, marginTop: 4 },
-    itemActions: {
-        flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: Colors.border,
-    },
+    infoText: { flex: 1, color: Colors.textSecondary, fontSize: 13, lineHeight: 18 },
+    postCard: { backgroundColor: Colors.surface, marginTop: 12, marginHorizontal: 16, borderRadius: 12, overflow: 'hidden', borderWidth: 0.5, borderColor: Colors.border },
+    postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    typeLabel: { color: Colors.text, fontSize: 14, fontWeight: '600' },
+    daysText: { color: Colors.textTertiary, fontSize: 12, fontWeight: '500' },
+    caption: { paddingHorizontal: 14, paddingBottom: 8, color: Colors.text, fontSize: 14, lineHeight: 20 },
+    mediaPreview: { width: '100%', height: 250 },
+    actionsRow: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: Colors.border },
     restoreBtn: {
         flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        gap: Spacing.xs, padding: Spacing.md,
-        borderRightWidth: 0.5, borderRightColor: Colors.border,
+        gap: 6, padding: 12, borderRightWidth: 0.5, borderRightColor: Colors.border,
     },
-    restoreBtnText: { color: Colors.primary, fontSize: FontSize.sm, fontWeight: '600' },
+    restoreBtnText: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
     permDeleteBtn: {
         flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        gap: Spacing.xs, padding: Spacing.md,
+        gap: 6, padding: 12,
     },
-    permDeleteText: { color: Colors.error, fontSize: FontSize.sm, fontWeight: '600' },
-    empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
-    emptyTitle: { fontSize: FontSize.xl, fontWeight: 'bold', color: Colors.text },
-    emptySubtitle: { color: Colors.textSecondary, fontSize: FontSize.md, textAlign: 'center', paddingHorizontal: 40 },
+    permDeleteText: { color: Colors.error, fontSize: 14, fontWeight: '600' },
+    empty: { alignItems: 'center', paddingTop: 80, gap: 12 },
+    emptyTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.text },
+    emptySubtitle: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
 });

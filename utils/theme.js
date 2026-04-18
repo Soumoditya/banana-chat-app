@@ -1,11 +1,11 @@
 // BananaChat Dark Theme
 export const Colors = {
     // Backgrounds
-    background: '#0A0A0F',
-    surface: '#12121A',
-    surfaceLight: '#1A1A2E',
-    surfaceElevated: '#222236',
-    card: '#16162A',
+    background: '#000000',
+    surface: '#1A1A1A',
+    surfaceLight: '#262626',
+    surfaceElevated: '#333333',
+    card: '#1A1A1A',
 
     // Primary accent - Golden Banana
     primary: '#FFD700',
@@ -28,7 +28,7 @@ export const Colors = {
     gradientPrimary: ['#FFD700', '#FF9100'],
     gradientSecondary: ['#6C63FF', '#00D2FF'],
     gradientPink: ['#FF6B9D', '#FF3D71'],
-    gradientDark: ['#0A0A0F', '#1A1A2E'],
+    gradientDark: ['#000000', '#1A1A1A'],
     gradientGold: ['#FFD700', '#FFA000', '#FF6F00'],
 
     // Text
@@ -56,8 +56,8 @@ export const Colors = {
     messageReceivedText: '#FFFFFF',
 
     // Borders
-    border: '#2A2A3E',
-    borderLight: '#3A3A50',
+    border: '#262626',
+    borderLight: '#333333',
 
     // Vote
     upvote: '#FF6B9D',
@@ -138,3 +138,89 @@ export const Shadow = {
 };
 
 export default { Colors, Spacing, FontSize, BorderRadius, Shadow };
+
+// ─── Dynamic Theme Resolution ───
+// Merges a premium theme's colors into the base Colors object.
+// Falls back to base Colors if themeId is 'default' or unknown.
+export const getThemedColors = (themeId) => {
+    if (!themeId || themeId === 'default') return { ...Colors };
+
+    // Import inline to avoid circular dependency
+    let PREMIUM_THEMES;
+    try {
+        PREMIUM_THEMES = require('./premium').PREMIUM_THEMES;
+    } catch {
+        return { ...Colors };
+    }
+
+    const theme = PREMIUM_THEMES[themeId];
+    if (!theme) return { ...Colors };
+
+    return {
+        ...Colors,
+        // Override main palette from the theme
+        primary: theme.primary || Colors.primary,
+        primaryLight: theme.primary ? theme.primary + '80' : Colors.primaryLight,
+        primaryDark: theme.primary || Colors.primaryDark,
+        primarySurface: theme.primary ? theme.primary + '1A' : Colors.primarySurface,
+        secondary: theme.accent || Colors.secondary,
+        secondaryLight: theme.accent ? theme.accent + '80' : Colors.secondaryLight,
+        secondarySurface: theme.accent ? theme.accent + '1A' : Colors.secondarySurface,
+        background: theme.background || Colors.background,
+        surface: theme.surface || Colors.surface,
+        surfaceLight: theme.surfaceLight || Colors.surfaceLight,
+        surfaceElevated: theme.surfaceLight || Colors.surfaceElevated,
+        card: theme.surface || Colors.card,
+        text: theme.text || Colors.text,
+        textSecondary: theme.textSecondary || Colors.textSecondary,
+        gradientPrimary: theme.gradient || Colors.gradientPrimary,
+        border: theme.surface ? theme.surface + 'CC' : Colors.border,
+        borderLight: theme.surfaceLight || Colors.borderLight,
+    };
+};
+
+// ─── UI Skin Style Resolution ───
+// Returns style overrides for card/surface elements based on skin selection.
+export const getSkinStyles = (skinId) => {
+    if (!skinId || skinId === 'default') {
+        return {
+            surfaceStyle: {},
+            cardStyle: {},
+            borderRadius: BorderRadius.lg,
+        };
+    }
+
+    let UI_SKINS;
+    try {
+        UI_SKINS = require('./premium').UI_SKINS;
+    } catch {
+        return { surfaceStyle: {}, cardStyle: {}, borderRadius: BorderRadius.lg };
+    }
+
+    const skin = UI_SKINS[skinId];
+    if (!skin) return { surfaceStyle: {}, cardStyle: {}, borderRadius: BorderRadius.lg };
+
+    const surfaceStyle = {
+        borderRadius: skin.borderRadius || BorderRadius.lg,
+        borderWidth: skin.borderWidth || 0.5,
+        borderColor: skin.borderColor || 'rgba(255,255,255,0.06)',
+        ...(skin.surfaceOpacity < 1 ? { opacity: skin.surfaceOpacity } : {}),
+    };
+
+    const cardStyle = {
+        ...surfaceStyle,
+        ...(skin.cardShadow ? {
+            shadowColor: skin.borderColor || '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 12,
+            elevation: 8,
+        } : {}),
+    };
+
+    return {
+        surfaceStyle,
+        cardStyle,
+        borderRadius: skin.borderRadius || BorderRadius.lg,
+    };
+};

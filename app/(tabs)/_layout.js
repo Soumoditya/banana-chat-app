@@ -1,21 +1,63 @@
+import { useState, useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { Colors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Badge dot shown on the notification tab
+function NotifBadge({ count, color, size, focused }) {
+    return (
+        <View style={{ width: size + 8, height: size + 8, justifyContent: 'center', alignItems: 'center' }}>
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={size} color={color} />
+            {count > 0 && (
+                <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+                </View>
+            )}
+        </View>
+    );
+}
 
 export default function TabsLayout() {
     const insets = useSafeAreaInsets();
+    const { user } = useAuth();
+    const [unreadCount, setUnreadCount] = useState(0);
+
+    useEffect(() => {
+        if (!user?.uid) return;
+
+        // Live unread count from Firestore
+        const q = query(
+            collection(db, 'notifications'),
+            where('targetUserId', '==', user.uid),
+            where('read', '==', false),
+            limit(100)
+        );
+
+        const unsub = onSnapshot(q, (snapshot) => {
+            setUnreadCount(snapshot.size);
+        }, () => {
+            // Collection may not exist yet — silent fail
+            setUnreadCount(0);
+        });
+
+        return () => unsub();
+    }, [user?.uid]);
 
     return (
         <Tabs
             screenOptions={{
                 headerShown: false,
-                tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 6), height: 56 + Math.max(insets.bottom, 6) }],
-                tabBarActiveTintColor: Colors.primary,
+                lazy: false,
+                tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8), height: 56 + Math.max(insets.bottom, 8) }],
+                tabBarActiveTintColor: Colors.text,
                 tabBarInactiveTintColor: Colors.textTertiary,
-                tabBarShowLabel: true,
-                tabBarLabelStyle: styles.tabLabel,
+                tabBarShowLabel: false,
+                animation: 'shift',
             }}
         >
             <Tabs.Screen
@@ -23,7 +65,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Home',
                     tabBarIcon: ({ color, focused }) => (
-                        <Ionicons name={focused ? "home" : "home-outline"} size={24} color={color} />
+                        <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
                     ),
                 }}
             />
@@ -32,7 +74,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Explore',
                     tabBarIcon: ({ color, focused }) => (
-                        <Ionicons name={focused ? "search" : "search-outline"} size={24} color={color} />
+                        <Ionicons name={focused ? 'search' : 'search-outline'} size={24} color={color} />
                     ),
                 }}
             />
@@ -40,26 +82,22 @@ export default function TabsLayout() {
                 name="create"
                 options={{
                     title: '',
-                    tabBarIcon: ({ color }) => (
-                        <View style={styles.createBtn}>
-                            <Ionicons name="add" size={28} color={Colors.textInverse} />
-                        </View>
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={30} color={Colors.primary} />
                     ),
                 }}
-                listeners={({ navigation }) => ({
-                    tabPress: (e) => {
-                        e.preventDefault();
-                        const router = require('expo-router').router;
-                        router.push('/create');
-                    },
-                })}
             />
             <Tabs.Screen
                 name="notifications"
                 options={{
                     title: 'Activity',
                     tabBarIcon: ({ color, focused }) => (
-                        <Ionicons name={focused ? "heart" : "heart-outline"} size={24} color={color} />
+                        <NotifBadge
+                            count={focused ? 0 : unreadCount}
+                            color={color}
+                            size={24}
+                            focused={focused}
+                        />
                     ),
                 }}
             />
@@ -68,7 +106,7 @@ export default function TabsLayout() {
                 options={{
                     title: 'Profile',
                     tabBarIcon: ({ color, focused }) => (
-                        <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />
+                        <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
                     ),
                 }}
             />
@@ -85,23 +123,27 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
     tabBar: {
-        backgroundColor: Colors.surface,
+        backgroundColor: Colors.background,
         borderTopColor: Colors.border,
         borderTopWidth: 0.5,
-        paddingTop: 6,
+        paddingTop: 8,
         elevation: 0,
     },
-    tabLabel: {
-        fontSize: 10,
-        fontWeight: '600',
-    },
-    createBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: Colors.primary,
+    badge: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        backgroundColor: Colors.error || '#FF3D71',
+        borderRadius: 8,
+        minWidth: 16,
+        height: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: -8,
+        paddingHorizontal: 3,
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 9,
+        fontWeight: 'bold',
     },
 });

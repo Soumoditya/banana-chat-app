@@ -1,8 +1,108 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+
+    // ── Users ───────────────────────────────────────────────────────────
+    // Public read so username/avatar lookup works before authentication.
+    // Only the signed-in user can write their own document.
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Posts ────────────────────────────────────────────────────────────
+    // Anyone authenticated can read posts.
+    // Only the post author can delete / hard-update; any authenticated user
+    // can add upvotes, saves etc. (increment fields).
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null
+                    && resource.data.authorId == request.auth.uid;
+
+      // Comments sub-collection
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null
+                               && resource.data.authorId == request.auth.uid;
+      }
+    }
+
+    // ── Stories ──────────────────────────────────────────────────────────
+    match /stories/{storyId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+                             && resource.data.authorId == request.auth.uid;
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────
+    // Only the target user can read their own notifications.
+    // Any authenticated user can create a notification (e.g. like / follow).
+    // Only the target user can delete or mark-read their own notifications.
+    match /notifications/{notifId} {
+      allow read, update, delete: if request.auth != null
+                                  && resource.data.targetUserId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // ── Chats ────────────────────────────────────────────────────────────
+    // The 'participants' array is the authoritative membership field used by
+    // getOrCreateDMChat and createGroupChat in services/chat.js.
+    // Create is allowed for any authenticated user (so new DMs/groups work).
+    // Read/write requires being a participant.
+    match /chats/{chatId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null
+                         && request.auth.uid in resource.data.participants;
+    }
+
+    // ── Reshares ─────────────────────────────────────────────────────────
+    match /reshares/{reshareId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Highlights / Story archives / Recently deleted ───────────────────
+    match /highlights/{highlightId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+                   && resource.data.authorId == request.auth.uid;
+    }
+
+    match /story_archive/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+                   && resource.data.authorId == request.auth.uid;
+    }
+
+    match /recently_deleted/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+                   && resource.data.authorId == request.auth.uid;
+    }
+
+    // ── Streaks ──────────────────────────────────────────────────────────
+    // Streak documents are keyed by composite user IDs; both participants
+    // should be able to read and update.
+    match /streaks/{streakId} {
       allow read, write: if request.auth != null;
     }
+
+    // ── Admin Messages ──────────────────────────────────────────────────
+    match /admin_messages/{msgId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // NOTE: No catch-all rule. Any unlisted collection will be denied by
+    // default. If a new collection is added, explicit rules MUST be added here.
   }
 }

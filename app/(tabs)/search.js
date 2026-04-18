@@ -6,12 +6,12 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { searchUsers } from '../../services/users';
+import { searchUsers, getUserProfile, getSuggestedUsers, followUser } from '../../services/users';
 import { searchPosts, getExplorePosts } from '../../services/posts';
-import { getUserProfile } from '../../services/users';
 import { getInitials, debounce } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PremiumBadge from '../../components/PremiumBadge';
 
 const { width } = Dimensions.get('window');
 const GRID_SIZE = (width - 6) / 3;
@@ -24,29 +24,41 @@ export default function ExploreScreen() {
     const [isSearching, setIsSearching] = useState(false);
     const [results, setResults] = useState([]);
     const [explorePosts, setExplorePosts] = useState([]);
+    const [suggestedUsers, setSuggestedUsers] = useState([]);
     const [searchHistory, setSearchHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
     const [authors, setAuthors] = useState({});
+    // Track optimistic follow state locally — prevents spam-tapping the Follow button
+    const [localFollowing, setLocalFollowing] = useState(new Set());
     const searchRef = useRef(null);
 
     useEffect(() => {
         loadExplorePosts();
         loadSearchHistory();
-    }, []);
+        if (user?.uid) loadSuggestions();
+    }, [user?.uid]);
+
+    const loadSuggestions = async () => {
+        try {
+            const suggestions = await getSuggestedUsers(user.uid, 8);
+            setSuggestedUsers(suggestions);
+        } catch {}
+    };
 
     const loadExplorePosts = async () => {
         try {
             const posts = await getExplorePosts(30);
             setExplorePosts(posts);
 
-            // Load authors
-            const authorMap = {};
-            for (const post of posts) {
-                if (!authorMap[post.authorId]) {
-                    const profile = await getUserProfile(post.authorId);
-                    if (profile) authorMap[post.authorId] = profile;
-                }
-            }
+            // Load authors in parallel (batched)
+            const uniqueAuthorIds = [...new Set(posts.map(p => p.authorId))];
+            const profileEntries = await Promise.all(
+                uniqueAuthorIds.map(async (id) => {
+                    const profile = await getUserProfile(id);
+                    return profile ? [id, profile] : null;
+                })
+            );
+            const authorMap = Object.fromEntries(profileEntries.filter(Boolean));
             setAuthors(authorMap);
         } catch (err) {
             console.error('Explore error:', err);
@@ -106,20 +118,64 @@ export default function ExploreScreen() {
         }
     };
 
+    const renderSuggestedUsers = () => {
+        if (!suggestedUsers || suggestedUsers.length === 0) return null;
+        return (
+            <View style={{ marginBottom: Spacing.md, paddingTop: Spacing.sm }}>
+                <Text style={{ fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginLeft: Spacing.md, marginBottom: Spacing.sm }}>Suggested for you</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.md, gap: Spacing.sm }}>
+                    {suggestedUsers.map(u => (
+                        <TouchableOpacity key={u.id} style={{ width: 120, padding: Spacing.sm, backgroundColor: Colors.surface, borderRadius: BorderRadius.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border }} onPress={() => router.push(`/user/${u.id}`)}>
+                            {u.avatar ? (
+                                <Image source={{ uri: u.avatar }} style={{ width: 60, height: 60, borderRadius: 30, marginBottom: Spacing.xs }} />
+                            ) : (
+                                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Colors.border, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.xs }}>
+                                    <Text style={{ color: Colors.text, fontWeight: 'bold' }}>{getInitials(u.displayName)}</Text>
+                                </View>
+                            )}
+                            <Text style={{ fontSize: FontSize.sm, fontWeight: '600', color: Colors.text }} numberOfLines={1}>{u.displayName}</Text>
+                            <Text style={{ fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm }} numberOfLines={1}>@{u.username}</Text>
+                        <TouchableOpacity
+                            style={[
+                                { backgroundColor: Colors.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: BorderRadius.sm, width: '100%', alignItems: 'center' },
+                                localFollowing.has(u.id) && { backgroundColor: Colors.surfaceLight },
+                            ]}
+                            disabled={localFollowing.has(u.id)}
+                            onPress={async () => {
+                                // Optimistic: update UI immediately, fire request in background
+                                setLocalFollowing(prev => new Set(prev).add(u.id));
+                                setSuggestedUsers(prev => prev.filter(su => su.id !== u.id));
+                                await followUser(user.uid, u.id);
+                            }}
+                        >
+                            <Text style={{ color: localFollowing.has(u.id) ? Colors.textSecondary : '#fff', fontSize: FontSize.xs, fontWeight: '600' }}>
+                                {localFollowing.has(u.id) ? 'Following' : 'Follow'}
+                            </Text>
+                        </TouchableOpacity>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+        );
+    };
+
     const renderExploreGrid = () => (
         <FlatList
             key="explore-grid-3"
             data={explorePosts}
             numColumns={3}
+            ListHeaderComponent={renderSuggestedUsers}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
                 <TouchableOpacity
                     style={styles.gridItem}
-                    onPress={() => router.push(`/post/${item.id}`)}
+                    onPress={() => router.push(`/post-feed?type=explore&startIndex=${index}`)}
                 >
-                    {item.media?.length > 0 ? (
-                        <Image source={{ uri: item.media[0] }} style={styles.gridImage} />
-                    ) : (
+                    {item.media?.length > 0 ? (() => {
+                        const firstMedia = item.media[0];
+                        const thumbUri = typeof firstMedia === 'string' ? firstMedia : firstMedia?.uri;
+                        return thumbUri ? <Image source={{ uri: thumbUri }} style={styles.gridImage} /> : null;
+                    })() : (
                         <View style={styles.gridTextPost}>
                             <Text style={styles.gridText} numberOfLines={4}>{item.content}</Text>
                         </View>
@@ -164,7 +220,10 @@ export default function ExploreScreen() {
                                 </View>
                             )}
                             <View style={styles.resultInfo}>
-                                <Text style={styles.resultName}>{item.displayName}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                                    <Text style={styles.resultName}>{item.displayName}</Text>
+                                    <PremiumBadge profile={item} size={14} />
+                                </View>
                                 <Text style={styles.resultUsername}>@{item.username}</Text>
                             </View>
                         </TouchableOpacity>

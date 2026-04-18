@@ -14,10 +14,13 @@ import {
     Modal,
     Dimensions,
     ActivityIndicator,
+    Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePremium } from '../../contexts/PremiumContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
+import AppleEmojiPicker from '../../components/AppleEmojiPicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
     subscribeToMessages,
@@ -45,22 +48,27 @@ import EmojiPicker from '../../components/EmojiPicker';
 import GiphyPicker from '../../components/GiphyPicker';
 import ImageViewer from '../../components/ImageViewer';
 import VideoViewer from '../../components/VideoViewer';
+import AudioWavePlayer from '../../components/AudioWavePlayer';
+import * as DocumentPicker from 'expo-document-picker';
 
 export default function ChatScreen() {
     const { id: chatId } = useLocalSearchParams();
-    const { user } = useAuth();
+    const { user, userProfile } = useAuth();
+    const { themedColors: C, activeFont, iosEmojiEnabled } = usePremium();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [chatInfo, setChatInfo] = useState(null);
     const [otherUser, setOtherUser] = useState(null);
+    const [showAppleEmoji, setShowAppleEmoji] = useState(false);
     const [replyTo, setReplyTo] = useState(null);
     const [typing, setTypingUsers] = useState({});
     const [showMenu, setShowMenu] = useState(false);
     const [showReactions, setShowReactions] = useState(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showGiphyPicker, setShowGiphyPicker] = useState(false);
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [viewerImage, setViewerImage] = useState(null);
@@ -72,6 +80,8 @@ export default function ChatScreen() {
     const [selectMode, setSelectMode] = useState(false);
     const [selectedMsgs, setSelectedMsgs] = useState([]);
     const [pinnedMsg, setPinnedMsg] = useState(null);
+    const [showGroupNameModal, setShowGroupNameModal] = useState(false);
+    const [groupNameInput, setGroupNameInput] = useState('');
 
     useEffect(() => {
         loadChatInfo();
@@ -172,6 +182,32 @@ export default function ChatScreen() {
         } catch (err) {
             setSending(false);
             Alert.alert('Error', 'Failed to send media: ' + err.message);
+        }
+    };
+
+    const handlePickDocument = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                copyToCacheDirectory: true,
+            });
+            if (!result.canceled && result.assets && result.assets[0]) {
+                const file = result.assets[0];
+                setSending(true);
+                const uploaded = await uploadToCloudinary(file.uri, 'raw');
+                await sendMessage(chatId, {
+                    senderId: user.uid,
+                    text: file.name || 'File',
+                    type: MESSAGE_TYPES.FILE,
+                    media: uploaded.url,
+                    fileName: file.name,
+                    fileSize: file.size,
+                });
+                setSending(false);
+            }
+        } catch (err) {
+            setSending(false);
+            Alert.alert('Error', 'Failed to send file: ' + err.message);
         }
     };
 
@@ -413,17 +449,13 @@ export default function ChatScreen() {
                     <View style={[styles.msgBubble, isMe ? styles.msgBubbleMe : styles.msgBubbleOther]}>
                         {/* Voice note */}
                         {msg.type === MESSAGE_TYPES.VOICE && msg.media && (
-                            <TouchableOpacity style={styles.voiceNote} onPress={() => playVoiceNote(msg.media)}>
-                                <Ionicons name="play-circle" size={32} color={isMe ? Colors.messageSentText : Colors.primary} />
-                                <View style={styles.voiceWave}>
-                                    {[...Array(12)].map((_, i) => (
-                                        <View key={i} style={[styles.voiceBar, { height: 4 + Math.random() * 16 }]} />
-                                    ))}
-                                </View>
-                                <Text style={[styles.voiceDuration, isMe && { color: Colors.messageSentText }]}>
-                                    {msg.duration ? `${Math.floor(msg.duration / 60)}:${String(msg.duration % 60).padStart(2, '0')}` : '0:00'}
-                                </Text>
-                            </TouchableOpacity>
+                            <View style={styles.voiceNote}>
+                                <AudioWavePlayer
+                                    uri={msg.media}
+                                    duration={msg.duration || 0}
+                                    tintColor={isMe ? Colors.messageSentText : Colors.primary}
+                                />
+                            </View>
                         )}
 
                         {msg.type === MESSAGE_TYPES.PHOTO && msg.media && (
@@ -450,12 +482,50 @@ export default function ChatScreen() {
 
                         {/* GIF */}
                         {msg.type === MESSAGE_TYPES.GIF && msg.media && (
-                            <Image source={{ uri: msg.media }} style={styles.msgMedia} resizeMode="cover" />
+                            <Image source={{ uri: msg.media }} style={{ width: Dimensions.get('window').width * 0.55, height: Dimensions.get('window').width * 0.55, borderRadius: 12 }} resizeMode="contain" />
                         )}
 
-                        {/* Text */}
-                        {msg.text ? (
-                            <Text style={[styles.msgText, isMe && styles.msgTextMe]}>{msg.text}</Text>
+                        {/* File */}
+                        {msg.type === MESSAGE_TYPES.FILE && msg.media && (
+                            <TouchableOpacity
+                                style={styles.fileBubble}
+                                onPress={() => Linking.openURL(msg.media).catch(() => Alert.alert('Error', 'Cannot open file'))}
+                            >
+                                <Ionicons name="document-outline" size={28} color={isMe ? Colors.messageSentText : Colors.primary} />
+                                <View style={{ flex: 1, marginLeft: 8 }}>
+                                    <Text style={[styles.fileName, isMe && { color: Colors.messageSentText }]} numberOfLines={1}>
+                                        {msg.fileName || msg.text || 'File'}
+                                    </Text>
+                                    {msg.fileSize ? (
+                                        <Text style={[styles.fileSize, isMe && { color: 'rgba(255,255,255,0.6)' }]}>
+                                            {(msg.fileSize / 1024).toFixed(0)} KB
+                                        </Text>
+                                    ) : null}
+                                </View>
+                                <Ionicons name="download-outline" size={20} color={isMe ? Colors.messageSentText : Colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Shared Post */}
+                        {msg.type === 'post' && msg.media && (
+                            <TouchableOpacity
+                                style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden', maxWidth: Dimensions.get('window').width * 0.6 }}
+                                onPress={() => router.push(`/post/${msg.media.postId}`)}
+                            >
+                                {msg.media.thumbnail && (
+                                    <Image source={{ uri: msg.media.thumbnail }} style={{ width: '100%', height: 150, borderTopLeftRadius: 10, borderTopRightRadius: 10 }} resizeMode="cover" />
+                                )}
+                                <View style={{ padding: 10 }}>
+                                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>{msg.media.authorName || 'Post'}</Text>
+                                    {msg.media.content ? <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }} numberOfLines={2}>{msg.media.content}</Text> : null}
+                                    <Text style={{ color: Colors.primary, fontSize: 11, marginTop: 6, fontWeight: '500' }}>View Post →</Text>
+                                </View>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Text — hide for GIF messages */}
+                        {msg.text && msg.type !== MESSAGE_TYPES.GIF ? (
+                            <Text selectable style={[styles.msgText, isMe && styles.msgTextMe]}>{msg.text}</Text>
                         ) : null}
 
                         {/* Time + Ticks */}
@@ -505,6 +575,12 @@ export default function ChatScreen() {
                                 <Ionicons name="checkbox-outline" size={18} color={Colors.text} />
                                 <Text style={styles.actionBtnText}>Select</Text>
                             </TouchableOpacity>
+                            {msg.text ? (
+                                <TouchableOpacity style={styles.actionBtn} onPress={async () => { try { const Clipboard = require('expo-clipboard'); await Clipboard.setStringAsync(msg.text); setShowReactions(null); } catch(e) {} }}>
+                                    <Ionicons name="copy-outline" size={18} color={Colors.text} />
+                                    <Text style={styles.actionBtnText}>Copy</Text>
+                                </TouchableOpacity>
+                            ) : null}
                             {isMe && (
                                 <TouchableOpacity style={styles.actionBtn} onPress={() => { deleteMessage(chatId, msg.id); setShowReactions(null); }}>
                                     <Ionicons name="trash" size={18} color={Colors.error} />
@@ -525,12 +601,12 @@ export default function ChatScreen() {
         .filter(([uid, isTyping]) => uid !== user?.uid && isTyping)
         .map(([uid]) => uid);
 
-    const isBroadcastBlocked = chatInfo?.isBroadcast && chatInfo?.adminId !== user?.uid;
+    const isBroadcastBlocked = chatInfo?.isBroadcast && !chatInfo?.admins?.includes(user?.uid);
 
     return (
         <KeyboardAvoidingView
             style={styles.container}
-            behavior="padding"
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             {/* Header */}
@@ -631,6 +707,13 @@ export default function ChatScreen() {
                         📢 Only admins can send messages in broadcast
                     </Text>
                 </View>
+            ) : userProfile?.isGuest ? (
+                <View style={[styles.inputBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
+                    <Text style={{ color: Colors.textTertiary, fontSize: FontSize.sm, flex: 1 }}>🔒 Guests can't message</Text>
+                    <TouchableOpacity style={{ backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 }} onPress={() => router.push('/(auth)/signup')}>
+                        <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>Sign Up</Text>
+                    </TouchableOpacity>
+                </View>
             ) : isRecording ? (
                 <View style={[styles.inputBar, styles.recordingBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
                     <TouchableOpacity style={styles.cancelRecBtn} onPress={cancelRecording}>
@@ -641,20 +724,23 @@ export default function ChatScreen() {
                         <Text style={styles.recordingText}>
                             {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
                         </Text>
+                        {/* Animated recording wave bars */}
+                        <View style={styles.voiceWave}>
+                            {[...Array(16)].map((_, i) => (
+                                <View key={i} style={[styles.voiceBar, { height: 4 + Math.random() * 14, backgroundColor: Colors.error, opacity: 0.8 }]} />
+                            ))}
+                        </View>
                     </View>
                     <TouchableOpacity style={styles.sendRecBtn} onPress={stopAndSendRecording}>
                         <Ionicons name="send" size={20} color={Colors.textInverse} />
                     </TouchableOpacity>
                 </View>
             ) : (
+                <>
                 <View style={[styles.inputBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
-                    <TouchableOpacity style={styles.attachBtn} onPress={handlePickImage}>
-                        <Ionicons name="images" size={24} color={Colors.textSecondary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.attachBtn} onPress={() => setShowGiphyPicker(true)}>
-                        <View style={{ backgroundColor: Colors.surface, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: Colors.textSecondary }}>GIF</Text>
-                        </View>
+                    {/* Collapsed + attach menu */}
+                    <TouchableOpacity style={styles.plusBtn} onPress={() => setShowAttachMenu(!showAttachMenu)}>
+                        <Ionicons name={showAttachMenu ? 'close' : 'add'} size={24} color={Colors.primary} />
                     </TouchableOpacity>
 
                     <TextInput
@@ -667,8 +753,14 @@ export default function ChatScreen() {
                         maxLength={2000}
                     />
 
+                    {iosEmojiEnabled && (
+                        <TouchableOpacity style={styles.attachBtn} onPress={() => setShowAppleEmoji(!showAppleEmoji)}>
+                            <Text style={{ fontSize: 18 }}>🍎</Text>
+                        </TouchableOpacity>
+                    )}
+
                     <TouchableOpacity style={styles.attachBtn} onPress={() => setShowEmojiPicker(true)}>
-                        <Ionicons name="happy-outline" size={22} color={Colors.primary} />
+                        <Ionicons name="happy-outline" size={20} color={Colors.textSecondary} />
                     </TouchableOpacity>
 
                     {inputText.trim() ? (
@@ -677,14 +769,55 @@ export default function ChatScreen() {
                             onPress={handleSend}
                             disabled={sending}
                         >
-                            <Ionicons name="send" size={20} color={Colors.textInverse} />
+                            <Ionicons name="send" size={18} color={Colors.textInverse} />
                         </TouchableOpacity>
                     ) : (
                         <TouchableOpacity style={styles.micBtn} onPress={startRecording}>
-                            <Ionicons name="mic" size={22} color={Colors.primary} />
+                            <Ionicons name="mic" size={20} color={Colors.primary} />
                         </TouchableOpacity>
                     )}
                 </View>
+                {/* Attach menu tray */}
+                {showAttachMenu && (
+                    <View style={[styles.attachTray, { paddingBottom: insets.bottom }]}>
+                        <TouchableOpacity style={styles.attachTrayItem} onPress={() => { setShowAttachMenu(false); handlePickImage(); }}>
+                            <View style={[styles.attachTrayIcon, { backgroundColor: '#10B98120' }]}>
+                                <Ionicons name="images" size={22} color="#10B981" />
+                            </View>
+                            <Text style={styles.attachTrayText}>Photo/Video</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachTrayItem} onPress={() => { setShowAttachMenu(false); handlePickDocument(); }}>
+                            <View style={[styles.attachTrayIcon, { backgroundColor: '#3B82F620' }]}>
+                                <Ionicons name="document-outline" size={22} color="#3B82F6" />
+                            </View>
+                            <Text style={styles.attachTrayText}>Document</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachTrayItem} onPress={() => { setShowAttachMenu(false); setShowGiphyPicker(true); }}>
+                            <View style={[styles.attachTrayIcon, { backgroundColor: '#A855F720' }]}>
+                                <Text style={{ fontSize: 13, fontWeight: '800', color: '#A855F7' }}>GIF</Text>
+                            </View>
+                            <Text style={styles.attachTrayText}>GIF</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachTrayItem} onPress={() => { setShowAttachMenu(false); startRecording(); }}>
+                            <View style={[styles.attachTrayIcon, { backgroundColor: '#EF444420' }]}>
+                                <Ionicons name="mic" size={22} color="#EF4444" />
+                            </View>
+                            <Text style={styles.attachTrayText}>Voice</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+                </>
+            )}
+
+            {/* Apple Emoji Picker for premium users */}
+            {iosEmojiEnabled && (
+                <AppleEmojiPicker
+                    visible={showAppleEmoji}
+                    onClose={() => setShowAppleEmoji(false)}
+                    onEmojiPress={(emoji) => {
+                        setInputText(prev => prev + emoji);
+                    }}
+                />
             )}
 
             {/* 3-dot Menu Modal */}
@@ -695,21 +828,15 @@ export default function ChatScreen() {
                             <>
                                 <TouchableOpacity style={styles.menuItem} onPress={() => {
                                     setShowMenu(false);
-                                    Alert.prompt ? Alert.prompt('Edit Group Name', 'Enter new group name:', async (newName) => {
-                                        if (newName?.trim()) {
-                                            const { updateDoc, doc } = require('firebase/firestore');
-                                            const { db } = require('../../config/firebase');
-                                            await updateDoc(doc(db, 'chats', chatId), { groupName: newName.trim() });
-                                            loadChatInfo();
-                                        }
-                                    }) : Alert.alert('Edit Group', 'Group name editing requires a text input modal — coming soon');
+                                    setGroupNameInput(chatInfo?.groupName || '');
+                                    setShowGroupNameModal(true);
                                 }}>
                                     <Ionicons name="pencil-outline" size={20} color={Colors.text} />
                                     <Text style={styles.menuText}>Edit Group Name</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.menuItem} onPress={() => {
                                     setShowMenu(false);
-                                    router.push('/create-group');
+                                    router.push(`/add-members?chatId=${chatId}`);
                                 }}>
                                     <Ionicons name="person-add-outline" size={20} color={Colors.text} />
                                     <Text style={styles.menuText}>Add Members</Text>
@@ -752,6 +879,94 @@ export default function ChatScreen() {
                 imageUrl={viewerImage}
                 onClose={() => setViewerImage(null)}
             />
+
+            {/* Full Screen Video Viewer */}
+            <Modal visible={!!viewerVideo} transparent={true} animationType="fade">
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' }}>
+                    <TouchableOpacity style={{ position: 'absolute', top: 60, right: 20, zIndex: 10, padding: 10 }} onPress={() => setViewerVideo(null)}>
+                        <Ionicons name="close" size={36} color="#fff" />
+                    </TouchableOpacity>
+                    {viewerVideo && (
+                        <Video
+                            source={{ uri: viewerVideo }}
+                            style={{ width: '100%', height: '80%' }}
+                            resizeMode={ResizeMode.CONTAIN}
+                            shouldPlay={true}
+                            useNativeControls={true}
+                        />
+                    )}
+                </View>
+            </Modal>
+
+            {/* Group Name Edit Modal — cross-platform TextInput-based */}
+            <Modal
+                visible={showGroupNameModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowGroupNameModal(false)}
+            >
+                <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}
+                    activeOpacity={1}
+                    onPress={() => setShowGroupNameModal(false)}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        style={{
+                            backgroundColor: Colors.surface,
+                            borderRadius: BorderRadius.lg,
+                            padding: Spacing.xl,
+                            width: '85%',
+                            gap: Spacing.md,
+                        }}
+                    >
+                        <Text style={{ color: Colors.text, fontSize: FontSize.lg, fontWeight: '700' }}>Edit Group Name</Text>
+                        <TextInput
+                            style={{
+                                backgroundColor: Colors.surfaceLight,
+                                borderRadius: BorderRadius.md,
+                                padding: Spacing.md,
+                                color: Colors.text,
+                                fontSize: FontSize.md,
+                            }}
+                            placeholder="Group name..."
+                            placeholderTextColor={Colors.textTertiary}
+                            value={groupNameInput}
+                            onChangeText={setGroupNameInput}
+                            defaultValue={chatInfo?.groupName || ''}
+                            autoFocus
+                            maxLength={60}
+                        />
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md }}>
+                            <TouchableOpacity
+                                style={{ paddingVertical: 8, paddingHorizontal: 16 }}
+                                onPress={() => setShowGroupNameModal(false)}
+                            >
+                                <Text style={{ color: Colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ backgroundColor: Colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: BorderRadius.md }}
+                                onPress={async () => {
+                                    const newName = groupNameInput.trim();
+                                    if (!newName) return;
+                                    try {
+                                        const { updateDoc, doc } = require('firebase/firestore');
+                                        const { db } = require('../../config/firebase');
+                                        await updateDoc(doc(db, 'chats', chatId), { groupName: newName });
+                                        setShowGroupNameModal(false);
+                                        setGroupNameInput('');
+                                        loadChatInfo();
+                                    } catch (e) {
+                                        Alert.alert('Error', 'Could not update group name');
+                                    }
+                                }}
+                            >
+                                <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
         </KeyboardAvoidingView>
     );
 }
@@ -841,19 +1056,28 @@ const styles = StyleSheet.create({
     replyPreviewLabel: { color: Colors.primary, fontSize: FontSize.xs, fontWeight: '600' },
     replyPreviewText: { color: Colors.textSecondary, fontSize: FontSize.sm },
     inputBar: {
-        flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: Spacing.md,
-        paddingVertical: Spacing.sm, paddingBottom: Spacing.lg,
-        backgroundColor: Colors.surface, borderTopWidth: 0.5, borderTopColor: Colors.border, gap: Spacing.sm,
+        flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: Spacing.sm,
+        paddingVertical: Spacing.sm, paddingBottom: Spacing.sm,
+        backgroundColor: Colors.surface, borderTopWidth: 0.5, borderTopColor: Colors.border, gap: 4,
     },
-    attachBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+    plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+    attachBtn: { width: 32, height: 36, justifyContent: 'center', alignItems: 'center' },
     input: {
         flex: 1, backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.xl,
-        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
-        color: Colors.text, fontSize: FontSize.md, maxHeight: 100, minHeight: 40,
+        paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+        color: Colors.text, fontSize: FontSize.md, maxHeight: 120, minHeight: 38,
     },
-    sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+    sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
     sendBtnDisabled: { backgroundColor: Colors.surfaceLight },
-    micBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+    micBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+    attachTray: {
+        flexDirection: 'row', backgroundColor: Colors.surface, borderTopWidth: 0.5,
+        borderTopColor: Colors.border, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+        justifyContent: 'space-around',
+    },
+    attachTrayItem: { alignItems: 'center', gap: 6 },
+    attachTrayIcon: { width: 50, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+    attachTrayText: { color: Colors.textSecondary, fontSize: 10, fontWeight: '600' },
     menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
     menuCard: {
         backgroundColor: Colors.surfaceElevated, marginHorizontal: Spacing.lg, borderRadius: BorderRadius.lg,
@@ -867,4 +1091,7 @@ const styles = StyleSheet.create({
     recordingIndicator: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, justifyContent: 'center' },
     recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.error },
     recordingText: { color: Colors.error, fontSize: FontSize.lg, fontWeight: '600' },
+    fileBubble: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, minWidth: 180 },
+    fileName: { color: Colors.text, fontSize: FontSize.sm, fontWeight: '600' },
+    fileSize: { color: Colors.textTertiary, fontSize: FontSize.xs, marginTop: 2 },
 });

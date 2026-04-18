@@ -2,18 +2,20 @@ import { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput, Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getArchivedStories, createHighlight } from '../services/stories';
+import { getArchivedStories, createHighlight, updateHighlight, getHighlights } from '../services/stories';
 import { HIGHLIGHT_TYPES, STORY_LABELS } from '../utils/constants';
 
 export default function HighlightEditorScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const params = useLocalSearchParams();
+    const editId = params?.editId;
 
     const [name, setName] = useState('');
     const [type, setType] = useState(HIGHLIGHT_TYPES.SPOTLIGHT);
@@ -27,6 +29,19 @@ export default function HighlightEditorScreen() {
         if (!user) return;
         const stories = await getArchivedStories(user.uid);
         setArchivedStories(stories);
+
+        // If editing, load existing highlight data
+        if (editId) {
+            try {
+                const allHighlights = await getHighlights(user.uid);
+                const existing = allHighlights.find(h => h.id === editId);
+                if (existing) {
+                    setName(existing.name || '');
+                    setType(existing.type || HIGHLIGHT_TYPES.SPOTLIGHT);
+                    setSelectedIds(existing.storyIds || []);
+                }
+            } catch (e) {}
+        }
     };
 
     const toggleStory = (id) => {
@@ -47,16 +62,29 @@ export default function HighlightEditorScreen() {
         try {
             setSaving(true);
             const coverStory = archivedStories.find(s => s.id === selectedIds[0]);
-            await createHighlight({
-                authorId: user.uid,
-                name: name.trim(),
-                type,
-                coverImage: coverStory?.media || '',
-                storyIds: selectedIds,
-            });
-            Alert.alert('Created!', `${type === HIGHLIGHT_TYPES.SPOTLIGHT ? 'Spotlight' : 'Memory'} created!`, [
-                { text: 'OK', onPress: () => router.back() }
-            ]);
+            if (editId) {
+                // Update existing
+                await updateHighlight(editId, {
+                    name: name.trim(),
+                    type,
+                    coverImage: coverStory?.media || '',
+                    storyIds: selectedIds,
+                });
+                Alert.alert('Updated!', 'Highlight updated!', [
+                    { text: 'OK', onPress: () => router.back() }
+                ]);
+            } else {
+                await createHighlight({
+                    authorId: user.uid,
+                    name: name.trim(),
+                    type,
+                    coverImage: coverStory?.media || '',
+                    storyIds: selectedIds,
+                });
+                Alert.alert('Created!', `${type === HIGHLIGHT_TYPES.SPOTLIGHT ? 'Spotlight' : 'Memory'} created!`, [
+                    { text: 'OK', onPress: () => router.back() }
+                ]);
+            }
         } catch (err) {
             Alert.alert('Error', err.message);
         } finally {
@@ -149,7 +177,13 @@ export default function HighlightEditorScreen() {
                             style={[styles.storyThumb, selected && styles.storyThumbSelected]}
                             onPress={() => toggleStory(item.id)}
                         >
-                            <Image source={{ uri: item.media }} style={styles.thumbImage} />
+                            {item.media ? (
+                                <Image source={{ uri: item.media }} style={styles.thumbImage} />
+                            ) : (
+                                <View style={[styles.thumbImage, { backgroundColor: item.bgColor || '#1a1a2e', justifyContent: 'center', alignItems: 'center', padding: 4 }]}>
+                                    <Text style={{ color: '#fff', fontSize: 9, textAlign: 'center' }} numberOfLines={3}>{item.text || 'Text'}</Text>
+                                </View>
+                            )}
                             {selected && (
                                 <View style={styles.checkmark}>
                                     <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />

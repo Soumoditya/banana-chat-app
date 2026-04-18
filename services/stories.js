@@ -7,6 +7,7 @@ import {
     query,
     where,
     orderBy,
+    limit,
     deleteDoc,
     serverTimestamp,
     updateDoc,
@@ -41,16 +42,19 @@ export const createStory = async (storyData) => {
 export const getStories = async (currentUser) => {
     if (!currentUser) return [];
 
+    // Single-field where query to avoid composite index requirement
+    // Filter expiresAt and sort client-side
     const publicQ = query(
         collection(db, 'stories'),
         where('type', '==', 'public'),
-        where('expiresAt', '>', new Date()),
-        orderBy('expiresAt'),
-        orderBy('createdAt', 'desc')
+        limit(100)
     );
 
+    const now = new Date();
     const publicSnapshot = await getDocs(publicQ);
-    let stories = publicSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    let stories = publicSnapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.expiresAt?.toDate ? s.expiresAt.toDate() > now : new Date(s.expiresAt) > now);
 
     // Friends + close friends stories
     if (currentUser.friends?.length > 0) {
@@ -58,22 +62,22 @@ export const getStories = async (currentUser) => {
         const friendsQ = query(
             collection(db, 'stories'),
             where('authorId', 'in', friendIds),
-            where('type', 'in', ['friends', 'closeFriends']),
-            where('expiresAt', '>', new Date())
+            limit(100)
         );
 
         try {
             const friendsSnapshot = await getDocs(friendsQ);
-            const friendStories = friendsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            const friendStories = friendsSnapshot.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(s => {
+                    const exp = s.expiresAt?.toDate ? s.expiresAt.toDate() : new Date(s.expiresAt);
+                    if (exp <= now) return false;
+                    if (!['friends', 'closeFriends'].includes(s.type)) return false;
+                    if (s.type === 'closeFriends') return currentUser.closeFriends?.includes(s.authorId);
+                    return true;
+                });
 
-            const filtered = friendStories.filter(s => {
-                if (s.type === 'closeFriends') {
-                    return currentUser.closeFriends?.includes(s.authorId);
-                }
-                return true;
-            });
-
-            stories = [...stories, ...filtered];
+            stories = [...stories, ...friendStories];
         } catch (err) {
             console.error('Error fetching friend stories:', err);
         }
@@ -82,6 +86,13 @@ export const getStories = async (currentUser) => {
     // Filter out stories hidden from current user
     const uid = currentUser.uid || currentUser.id;
     stories = stories.filter(s => !(s.hiddenFrom || []).includes(uid));
+
+    // Sort newest first
+    stories.sort((a, b) => {
+        const ta = a.createdAt?.seconds || 0;
+        const tb = b.createdAt?.seconds || 0;
+        return tb - ta;
+    });
 
     // Group by author
     const grouped = {};
@@ -94,17 +105,27 @@ export const getStories = async (currentUser) => {
 };
 
 // ─── USER STORIES ────────────────────────────────────
+// Single-field where only — sort and filter client-side to avoid composite index
 export const getUserStories = async (uid) => {
-    const q = query(
-        collection(db, 'stories'),
-        where('authorId', '==', uid),
-        where('expiresAt', '>', new Date()),
-        orderBy('expiresAt'),
-        orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    try {
+        const q = query(
+            collection(db, 'stories'),
+            where('authorId', '==', uid),
+            limit(50)
+        );
+        const snapshot = await getDocs(q);
+        const now = new Date();
+        return snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(s => {
+                const exp = s.expiresAt?.toDate ? s.expiresAt.toDate() : new Date(s.expiresAt);
+                return exp > now;
+            })
+            .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    } catch (err) {
+        console.warn('getUserStories error:', err.message);
+        return [];
+    }
 };
 
 // ─── VIEW ────────────────────────────────────────────
@@ -210,15 +231,27 @@ export const softDelete = async (itemId, itemType, itemData) => {
 
 // Get user's recently deleted items
 export const getRecentlyDeleted = async (uid) => {
-    const q = query(
-        collection(db, 'recently_deleted'),
-        where('authorId', '==', uid),
-        where('expiresAt', '>', new Date()),
-        orderBy('expiresAt')
-    );
+    try {
+        const q = query(
+            collection(db, 'recently_deleted'),
+            where('authorId', '==', uid),
+            limit(100)
+        );
 
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const snapshot = await getDocs(q);
+        let items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Client-side filter: only show non-expired
+        const now = new Date();
+        items = items.filter(item => {
+            const expires = item.expiresAt?.seconds ? new Date(item.expiresAt.seconds * 1000) : item.expiresAt instanceof Date ? item.expiresAt : new Date(item.expiresAt);
+            return expires > now;
+        });
+        items.sort((a, b) => (b.deletedAt?.seconds || 0) - (a.deletedAt?.seconds || 0));
+        return items;
+    } catch (err) {
+        console.error('getRecentlyDeleted error:', err);
+        return [];
+    }
 };
 
 // Restore from trash

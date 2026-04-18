@@ -1,0 +1,31 @@
+# EAS ignore — overrides .gitignore for cloud builds
+# Keep android/ and keystore included (needed for build)
+
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.p8
+*.p12
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
+/ios
+
+# Android build artifacts (keep android/ source but skip compiled output)
+android/app/build/
+android/build/
+android/.gradle/
+android/.cxx/
+
+# NOTE: /android and *.jks are intentionally NOT ignored
+# so EAS uses our pre-configured android folder + keystore

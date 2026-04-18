@@ -25,17 +25,23 @@ export default function SignupScreen() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [usernameAvailable, setUsernameAvailable] = useState(null);
+    const [usernameStatus, setUsernameStatus] = useState(null); // null | 'available' | 'taken' | 'checking' | 'error'
     const { signUp, checkUsernameAvailable, error, setError } = useAuth();
     const router = useRouter();
 
     const checkUsername = async (name) => {
         setUsername(name);
         if (name.length >= 3) {
-            const available = await checkUsernameAvailable(name);
-            setUsernameAvailable(available);
+            setUsernameStatus('checking');
+            try {
+                const available = await checkUsernameAvailable(name);
+                setUsernameStatus(available ? 'available' : 'taken');
+            } catch (err) {
+                // If Firestore read fails (unauthenticated), show neutral
+                setUsernameStatus('error');
+            }
         } else {
-            setUsernameAvailable(null);
+            setUsernameStatus(null);
         }
     };
 
@@ -65,7 +71,7 @@ export default function SignupScreen() {
             return;
         }
 
-        if (usernameAvailable === false) {
+        if (usernameStatus === 'taken') {
             Alert.alert('Error', 'Username is already taken');
             return;
         }
@@ -106,21 +112,24 @@ export default function SignupScreen() {
                 {/* Form */}
                 <View style={styles.form}>
                     {/* Username */}
-                    <View style={[styles.inputContainer, usernameAvailable === false && styles.inputError, usernameAvailable === true && styles.inputSuccess]}>
+                    <View style={[styles.inputContainer, usernameStatus === 'taken' && styles.inputError, usernameStatus === 'available' && styles.inputSuccess]}>
                         <Ionicons name="at-outline" size={20} color={Colors.textSecondary} style={styles.inputIcon} />
                         <TextInput
                             style={styles.input}
-                            placeholder="Username"
+                            placeholder="Username (e.g. soumo_21)"
                             placeholderTextColor={Colors.textTertiary}
                             value={username}
                             onChangeText={checkUsername}
                             autoCapitalize="none"
                             autoCorrect={false}
                         />
-                        {usernameAvailable === true && (
+                        {usernameStatus === 'checking' && (
+                            <ActivityIndicator size="small" color={Colors.primary} />
+                        )}
+                        {usernameStatus === 'available' && (
                             <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
                         )}
-                        {usernameAvailable === false && (
+                        {usernameStatus === 'taken' && (
                             <Ionicons name="close-circle" size={20} color={Colors.error} />
                         )}
                     </View>

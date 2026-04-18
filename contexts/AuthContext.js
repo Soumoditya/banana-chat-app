@@ -8,6 +8,7 @@ import {
     GoogleAuthProvider,
     signInWithCredential,
     updateProfile,
+    sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
     doc,
@@ -22,8 +23,10 @@ import {
 } from 'firebase/firestore';
 import { ref, set, onDisconnect, serverTimestamp as rtdbTimestamp } from 'firebase/database';
 import { auth, db, rtdb } from '../config/firebase';
-import { ADMIN_EMAIL, ADMIN_USERNAME, BROADCAST_CHAT_ID, BROADCAST_CHAT_NAME } from '../utils/constants';
+import { ADMIN_EMAIL, ADMIN_USERNAME, BROADCAST_CHAT_ID, BROADCAST_CHAT_NAME, isUserAdmin } from '../utils/constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerForPushNotifications, savePushToken } from '../services/pushNotifications';
+import { updateAppStreak } from '../services/streaks';
 
 const AuthContext = createContext({});
 
@@ -44,6 +47,11 @@ export const AuthProvider = ({ children }) => {
                     if (profile) {
                         setUserProfile(profile);
                         updatePresence(firebaseUser.uid, true);
+                        // Register push notifications
+                        const pushToken = await registerForPushNotifications();
+                        if (pushToken) await savePushToken(firebaseUser.uid, pushToken);
+                        // Update app streak on login
+                        updateAppStreak(firebaseUser.uid).catch(() => {});
                     }
                 } else {
                     setUser(null);
@@ -94,20 +102,40 @@ export const AuthProvider = ({ children }) => {
 
     const checkUsernameAvailable = async (username) => {
         try {
+            // Try indexed query first
             const q = query(collection(db, 'users'), where('usernameLower', '==', username.toLowerCase()));
             const snapshot = await getDocs(q);
-            return snapshot.empty;
+            if (!snapshot.empty) return false;
         } catch (err) {
-            console.warn('Username check error (assuming available):', err.message);
-            // Fail-open: if Firestore index is missing or query fails,
-            // assume username is available so signup isn't blocked.
-            // The actual uniqueness will be enforced by createUserProfile.
+            console.warn('Indexed username check failed, trying scan:', err.message);
+        }
+        
+        // Fallback: scan all users to enforce uniqueness even without indexes
+        try {
+            const allUsersSnapshot = await getDocs(collection(db, 'users'));
+            const taken = allUsersSnapshot.docs.some(d => {
+                const data = d.data();
+                return (data.usernameLower || data.username || '').toLowerCase() === username.toLowerCase();
+            });
+            return !taken;
+        } catch (scanErr) {
+            console.warn('Username scan failed:', scanErr.message);
+            // If both methods fail, block signup to prevent duplicates
+            return false;
+        }
+    };
+
+    const resetPassword = async (email) => {
+        try {
+            await sendPasswordResetEmail(auth, email);
             return true;
+        } catch (err) {
+            throw err;
         }
     };
 
     const createUserProfile = async (uid, data) => {
-        const isAdmin = data.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const isAdmin = isUserAdmin({ email: data.email, username: data.username });
 
         const uname = data.username || 'user_' + uid.substring(0, 6);
         const dname = data.displayName || data.username || 'Banana User';
@@ -183,12 +211,16 @@ export const AuthProvider = ({ children }) => {
             setError(null);
             setLoading(true);
 
+            // Create auth account FIRST so we're authenticated for Firestore queries
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+
+            // Now check username availability (we're authenticated, Firestore reads work)
             const isAvailable = await checkUsernameAvailable(username);
             if (!isAvailable) {
-                throw new Error('Username already taken');
+                // Username taken — delete the auth account we just created
+                try { await result.user.delete(); } catch (e) { console.warn('Cleanup failed:', e); }
+                throw new Error('Username already taken. Please choose another.');
             }
-
-            const result = await createUserWithEmailAndPassword(auth, email, password);
 
             await updateProfile(result.user, { displayName });
 
@@ -219,38 +251,50 @@ export const AuthProvider = ({ children }) => {
 
             // If identifier doesn't look like an email, treat as username
             if (!identifier.includes('@')) {
+                let foundEmail = null;
+                
+                // Try indexed queries first (fast path)
                 try {
                     let q = query(collection(db, 'users'), where('usernameLower', '==', identifier.toLowerCase()));
                     let snapshot = await getDocs(q);
-
-                    // Fallback 1: Try exact 'username' (for legacy accounts without usernameLower)
+                    
                     if (snapshot.empty) {
                         q = query(collection(db, 'users'), where('username', '==', identifier));
                         snapshot = await getDocs(q);
                     }
-
-                    // Fallback 2: Users often confuse Display Name with Username. Let's try displayNameLower
-                    if (snapshot.empty) {
-                        q = query(collection(db, 'users'), where('displayNameLower', '==', identifier.toLowerCase()));
-                        snapshot = await getDocs(q);
+                    
+                    if (!snapshot.empty) {
+                        foundEmail = snapshot.docs[0].data().email;
                     }
-
-                    if (snapshot.empty) {
-                        throw new Error('No account found with that username or name. Try using your email instead.');
-                    }
-                    const userData = snapshot.docs[0].data();
-                    loginEmail = userData.email;
-                    if (!loginEmail) {
-                        throw new Error('This account has no email linked. Please login with email.');
-                    }
-                } catch (lookupErr) {
-                    if (lookupErr.message.includes('No account') || lookupErr.message.includes('no email')) {
-                        throw lookupErr;
-                    }
-                    // Firestore query error (missing index etc) — tell user to use email
-                    console.warn('Username lookup failed:', lookupErr.message);
-                    throw new Error('Username login temporarily unavailable. Please use your email address to sign in.');
+                } catch (indexErr) {
+                    // Index query failed — this is expected if Firestore indexes are missing
+                    console.warn('Indexed username lookup failed, trying fallback:', indexErr.message);
                 }
+                
+                // Fallback: scan users collection (works without indexes)
+                if (!foundEmail) {
+                    try {
+                        const allUsersSnapshot = await getDocs(collection(db, 'users'));
+                        const matchedUser = allUsersSnapshot.docs.find(d => {
+                            const data = d.data();
+                            const unameLower = (data.usernameLower || data.username || '').toLowerCase();
+                            const dnameLower = (data.displayNameLower || data.displayName || '').toLowerCase();
+                            return unameLower === identifier.toLowerCase() || dnameLower === identifier.toLowerCase();
+                        });
+                        
+                        if (matchedUser) {
+                            foundEmail = matchedUser.data().email;
+                        }
+                    } catch (scanErr) {
+                        console.warn('User scan fallback failed:', scanErr.message);
+                    }
+                }
+                
+                if (!foundEmail) {
+                    throw new Error('No account found with that username. Try your email address instead.');
+                }
+                
+                loginEmail = foundEmail;
             }
 
             const result = await signInWithEmailAndPassword(auth, loginEmail, password);
@@ -332,8 +376,9 @@ export const AuthProvider = ({ children }) => {
         refreshProfile,
         checkUsernameAvailable,
         updatePresence,
+        resetPassword,
         setError,
-        isAdmin: userProfile?.isAdmin || false,
+        isAdmin: isUserAdmin(userProfile),
     };
 
     return (

@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors } from '../utils/theme';
-import { LinearGradient } from 'expo-linear-gradient';
 
 export default function SplashScreen() {
     const { user, loading } = useAuth();

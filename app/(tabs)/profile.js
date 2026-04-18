@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal,
-    TextInput, Dimensions, Linking,
+    TextInput, Dimensions, Linking, Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePremium } from '../../contexts/PremiumContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserPosts, getSavedPosts } from '../../services/posts';
 import { getHighlights, getStoriesByIds } from '../../services/stories';
+import { getResharesByUser } from '../../services/reshares';
 import { updateUserProfile } from '../../services/users';
 import { getAppStreak } from '../../services/streaks';
 import { getInitials, formatCount } from '../../utils/helpers';
@@ -16,15 +19,29 @@ import { getStreakEmoji } from '../../utils/constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadToCloudinary } from '../../config/cloudinary';
 import * as ImagePicker from 'expo-image-picker';
+import PremiumBadge, { PremiumFlair } from '../../components/PremiumBadge';
+import { isPremiumActive } from '../../utils/premium';
 
 const { width } = Dimensions.get('window');
 
+// Social link config
+const SOCIAL_PLATFORMS = {
+    instagram: { icon: 'logo-instagram', color: '#E4405F', label: 'Instagram', placeholder: 'username' },
+    twitter: { icon: 'logo-twitter', color: '#1DA1F2', label: 'Twitter / X', placeholder: 'username' },
+    youtube: { icon: 'logo-youtube', color: '#FF0000', label: 'YouTube', placeholder: 'channel name' },
+    github: { icon: 'logo-github', color: '#fff', label: 'GitHub', placeholder: 'username' },
+    linkedin: { icon: 'logo-linkedin', color: '#0A66C2', label: 'LinkedIn', placeholder: 'username' },
+    website: { icon: 'globe-outline', color: '#FFD60A', label: 'Website', placeholder: 'https://...' },
+};
+
 export default function ProfileScreen() {
     const { user, userProfile, signOut, isAdmin, refreshProfile } = useAuth();
+    const { themedColors: C, activeFont } = usePremium();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [posts, setPosts] = useState([]);
     const [savedPosts, setSavedPosts] = useState([]);
+    const [resharedPosts, setResharedPosts] = useState([]);
     const [highlights, setHighlights] = useState([]);
     const [appStreak, setAppStreak] = useState(0);
     const [activeTab, setActiveTab] = useState('posts');
@@ -34,9 +51,12 @@ export default function ProfileScreen() {
     const [personalForm, setPersonalForm] = useState({});
     const [uploading, setUploading] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, [user]);
+    // Refresh data each time the profile tab is focused (including initial mount)
+    useFocusEffect(
+        useCallback(() => {
+            if (user) loadData();
+        }, [user])
+    );
 
     const loadData = async () => {
         if (!user) return;
@@ -46,6 +66,9 @@ export default function ProfileScreen() {
 
             const streak = await getAppStreak(user.uid);
             setAppStreak(streak.count || 0);
+            
+            const reshared = await getResharesByUser(user.uid);
+            setResharedPosts(reshared);
 
             if (userProfile?.savedPosts?.length > 0) {
                 const saved = await getSavedPosts(userProfile.savedPosts);
@@ -74,8 +97,7 @@ export default function ProfileScreen() {
             displayName: userProfile?.displayName || '',
             bio: userProfile?.bio || '',
             username: userProfile?.username || '',
-            link1: userProfile?.link1 || '',
-            link2: userProfile?.link2 || '',
+            socialLinks: userProfile?.socialLinks || {},
         });
         setShowEditModal(true);
     };
@@ -119,8 +141,7 @@ export default function ProfileScreen() {
             await updateUserProfile(user.uid, {
                 displayName: editForm.displayName,
                 bio: editForm.bio,
-                link1: editForm.link1,
-                link2: editForm.link2,
+                socialLinks: editForm.socialLinks || {},
             });
             await refreshProfile();
             setShowEditModal(false);
@@ -147,23 +168,31 @@ export default function ProfileScreen() {
         }
     };
 
-    const currentDisplayPosts = activeTab === 'posts' ? posts : savedPosts;
+    const currentDisplayPosts = activeTab === 'posts' ? posts : activeTab === 'reshares' ? resharedPosts : savedPosts;
 
-    const renderGridItem = (post) => (
-        <TouchableOpacity
-            key={post.id}
-            style={styles.postGridItem}
-            onPress={() => router.push(`/post/${post.id}`)}
-        >
-            {post.media?.length > 0 ? (
-                <Image source={{ uri: post.media[0] }} style={styles.postGridImage} />
-            ) : (
-                <View style={styles.postGridText}>
-                    <Text style={styles.postGridContent} numberOfLines={4}>{post.content}</Text>
-                </View>
-            )}
-        </TouchableOpacity>
-    );
+    const renderGridItem = (item, index) => {
+        const post = item.isReshare ? item.post : item;
+        const id = item.isReshare ? item.originalPostId : item.id;
+        const feedType = activeTab === 'posts' ? 'user' : activeTab === 'reshares' ? 'reshared' : 'saved';
+        return (
+            <TouchableOpacity
+                key={item.id || id}
+                style={styles.postGridItem}
+                onPress={() => router.push(`/post-feed?type=${feedType}&startIndex=${index}&userId=${user?.uid}`)}
+            >
+                {post.media?.length > 0 ? (
+                    <Image 
+                        source={{ uri: typeof post.media[0] === 'string' ? post.media[0] : post.media[0]?.uri }} 
+                        style={styles.postGridImage} 
+                    />
+                ) : (
+                    <View style={styles.postGridText}>
+                        <Text style={styles.postGridContent} numberOfLines={4}>{post.content}</Text>
+                    </View>
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -226,36 +255,65 @@ export default function ProfileScreen() {
 
                     {/* Name and Bio */}
                     <View style={styles.nameSection}>
-                        <Text style={styles.displayName}>{userProfile?.displayName || 'User'}</Text>
-                        {userProfile?.bio ? <Text style={styles.bio}>{userProfile.bio}</Text> : null}
-                        {(userProfile?.link1 || userProfile?.link2) && (
-                            <View style={styles.linksRow}>
-                                {userProfile?.link1 ? (
-                                    <TouchableOpacity style={styles.linkItem} onPress={() => {
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                            <Text style={styles.displayName}>{userProfile?.displayName || 'User'}</Text>
+                            <PremiumBadge profile={userProfile} size={18} />
+                        </View>
+                        {isPremiumActive(userProfile) && <PremiumFlair profile={userProfile} style={{ alignSelf: 'flex-start', marginTop: 4 }} />}
+                        {userProfile?.bio ? (
+                            <Text style={styles.bio}>
+                                {userProfile.bio.split(/(@\w+)/g).map((part, i) => {
+                                    if (part.match(/^@\w+$/)) {
+                                        const username = part.slice(1);
+                                        return (
+                                            <Text
+                                                key={i}
+                                                style={{ color: Colors.primary, fontWeight: '600' }}
+                                                onPress={() => router.push(`/user/${username}`)}
+                                            >
+                                                {part}
+                                            </Text>
+                                        );
+                                    }
+                                    return <Text key={i}>{part}</Text>;
+                                })}
+                            </Text>
+                        ) : null}
+                        {(userProfile?.socialLinks && Object.values(userProfile.socialLinks).some(v => v)) || userProfile?.link1 || userProfile?.link2 ? (
+                            <View style={styles.socialLinksDisplay}>
+                                {Object.entries(userProfile?.socialLinks || {}).filter(([_, v]) => v && v.trim()).map(([platform, value]) => {
+                                    const config = SOCIAL_PLATFORMS[platform];
+                                    if (!config) return null;
+                                    return (
+                                        <TouchableOpacity
+                                            key={platform}
+                                            style={styles.socialIconBtn}
+                                            onPress={() => {
+                                                let url = value;
+                                                if (platform === 'instagram') url = `https://instagram.com/${value}`;
+                                                else if (platform === 'twitter') url = `https://twitter.com/${value}`;
+                                                else if (platform === 'youtube') url = `https://youtube.com/@${value}`;
+                                                else if (platform === 'github') url = `https://github.com/${value}`;
+                                                else if (platform === 'linkedin') url = `https://linkedin.com/in/${value}`;
+                                                else if (!url.startsWith('http')) url = 'https://' + url;
+                                                Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
+                                            }}
+                                        >
+                                            <Ionicons name={config.icon} size={20} color={config.color} />
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                {userProfile?.link1 && !userProfile?.socialLinks?.website ? (
+                                    <TouchableOpacity style={styles.socialIconBtn} onPress={() => {
                                         let url = userProfile.link1;
-                                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                                            url = 'https://' + url;
-                                        }
+                                        if (!url.startsWith('http')) url = 'https://' + url;
                                         Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
                                     }}>
-                                        <Ionicons name="link-outline" size={14} color={Colors.primary} />
-                                        <Text style={styles.linkText} numberOfLines={1}>{userProfile.link1}</Text>
-                                    </TouchableOpacity>
-                                ) : null}
-                                {userProfile?.link2 ? (
-                                    <TouchableOpacity style={styles.linkItem} onPress={() => {
-                                        let url = userProfile.link2;
-                                        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                                            url = 'https://' + url;
-                                        }
-                                        Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
-                                    }}>
-                                        <Ionicons name="link-outline" size={14} color={Colors.primary} />
-                                        <Text style={styles.linkText} numberOfLines={1}>{userProfile.link2}</Text>
+                                        <Ionicons name="link-outline" size={18} color={Colors.primary} />
                                     </TouchableOpacity>
                                 ) : null}
                             </View>
-                        )}
+                        ) : null}
                         <View style={styles.infoRow}>
                             <View style={styles.streakBadge}>
                                 <Text style={styles.streakText}>{getStreakEmoji(appStreak)} {appStreak} day streak</Text>
@@ -272,8 +330,24 @@ export default function ProfileScreen() {
                         <TouchableOpacity style={styles.editProfileBtn} onPress={openEditProfile}>
                             <Text style={styles.editProfileText}>Edit Profile</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.shareProfileBtn}>
+                        <TouchableOpacity
+                            style={styles.shareProfileBtn}
+                            onPress={async () => {
+                                try {
+                                    await Share.share({
+                                        message: `Check out @${userProfile?.username || 'me'} on Banana Chat 🍌`,
+                                        title: userProfile?.displayName || 'Banana Chat Profile',
+                                    });
+                                } catch (e) {}
+                            }}
+                        >
                             <Ionicons name="share-outline" size={18} color={Colors.text} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.shareProfileBtn, isPremiumActive(userProfile) && { borderColor: '#FFD700' }]}
+                            onPress={() => router.push('/premium')}
+                        >
+                            <Ionicons name="diamond" size={16} color={isPremiumActive(userProfile) ? '#FFD700' : Colors.text} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -290,11 +364,16 @@ export default function ProfileScreen() {
                         <TouchableOpacity
                             key={h.id}
                             style={styles.highlightCircle}
-                            onPress={async () => {
-                                const hlStories = await getStoriesByIds(h.storyIds || []);
-                                if (hlStories.length > 0) {
-                                    router.push(`/story/${user.uid}`);
-                                }
+                            onPress={() => {
+                                router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`);
+                            }}
+                            onLongPress={() => {
+                                const { Alert } = require('react-native');
+                                Alert.alert(h.name || 'Highlight', null, [
+                                    { text: 'View', onPress: () => router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`) },
+                                    { text: 'Edit', onPress: () => router.push(`/highlight-editor?editId=${h.id}`) },
+                                    { text: 'Cancel', style: 'cancel' },
+                                ]);
                             }}
                         >
                             <View style={[
@@ -323,6 +402,9 @@ export default function ProfileScreen() {
                     <TouchableOpacity style={[styles.tab, activeTab === 'posts' && styles.tabActive]} onPress={() => setActiveTab('posts')}>
                         <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? Colors.primary : Colors.textSecondary} />
                     </TouchableOpacity>
+                    <TouchableOpacity style={[styles.tab, activeTab === 'reshares' && styles.tabActive]} onPress={() => setActiveTab('reshares')}>
+                        <Ionicons name="repeat" size={22} color={activeTab === 'reshares' ? Colors.primary : Colors.textSecondary} />
+                    </TouchableOpacity>
                     <TouchableOpacity style={[styles.tab, activeTab === 'saved' && styles.tabActive]} onPress={() => setActiveTab('saved')}>
                         <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? Colors.primary : Colors.textSecondary} />
                     </TouchableOpacity>
@@ -335,8 +417,8 @@ export default function ProfileScreen() {
                     </View>
                 ) : (
                     <View style={styles.emptyPosts}>
-                        <Ionicons name={activeTab === 'posts' ? "images-outline" : "bookmark-outline"} size={48} color={Colors.textTertiary} />
-                        <Text style={styles.emptyText}>{activeTab === 'posts' ? 'No posts yet' : 'No saved posts'}</Text>
+                        <Ionicons name={activeTab === 'posts' ? "images-outline" : activeTab === 'reshares' ? "repeat" : "bookmark-outline"} size={48} color={Colors.textTertiary} />
+                        <Text style={styles.emptyText}>{activeTab === 'posts' ? 'No posts yet' : activeTab === 'reshares' ? 'No reshared posts' : 'No saved posts'}</Text>
                     </View>
                 )}
 
@@ -410,28 +492,25 @@ export default function ProfileScreen() {
                                         maxLength={150}
                                     />
                                 </View>
-                                <View style={styles.editField}>
-                                    <Text style={styles.editLabel}>Link 1</Text>
-                                    <TextInput
-                                        style={styles.editInput}
-                                        value={editForm.link1}
-                                        onChangeText={(t) => setEditForm({ ...editForm, link1: t })}
-                                        placeholder="https://..."
-                                        placeholderTextColor={Colors.textTertiary}
-                                        autoCapitalize="none"
-                                    />
-                                </View>
-                                <View style={styles.editField}>
-                                    <Text style={styles.editLabel}>Link 2</Text>
-                                    <TextInput
-                                        style={styles.editInput}
-                                        value={editForm.link2}
-                                        onChangeText={(t) => setEditForm({ ...editForm, link2: t })}
-                                        placeholder="https://..."
-                                        placeholderTextColor={Colors.textTertiary}
-                                        autoCapitalize="none"
-                                    />
-                                </View>
+
+                                {/* Social Links Section */}
+                                <Text style={[styles.editLabel, { marginBottom: Spacing.sm, marginTop: Spacing.sm }]}>Social Links</Text>
+                                {Object.entries(SOCIAL_PLATFORMS).map(([key, config]) => (
+                                    <View key={key} style={styles.socialLinkField}>
+                                        <Ionicons name={config.icon} size={20} color={config.color} />
+                                        <TextInput
+                                            style={styles.socialLinkInput}
+                                            value={editForm.socialLinks?.[key] || ''}
+                                            onChangeText={(t) => setEditForm({
+                                                ...editForm,
+                                                socialLinks: { ...editForm.socialLinks, [key]: t },
+                                            })}
+                                            placeholder={config.placeholder}
+                                            placeholderTextColor={Colors.textTertiary}
+                                            autoCapitalize="none"
+                                        />
+                                    </View>
+                                ))}
 
                                 {/* Personal Details */}
                                 <TouchableOpacity style={styles.personalDetailsBtn} onPress={openPersonalDetails}>
@@ -686,4 +765,22 @@ const styles = StyleSheet.create({
     genderChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primarySurface },
     genderText: { color: Colors.textSecondary, fontSize: FontSize.sm },
     genderTextActive: { color: Colors.primary, fontWeight: '600' },
+    // Social links display
+    socialLinksDisplay: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm, flexWrap: 'wrap', justifyContent: 'center' },
+    socialIconBtn: {
+        width: 36, height: 36, borderRadius: 18,
+        backgroundColor: Colors.surfaceLight,
+        justifyContent: 'center', alignItems: 'center',
+    },
+    // Social links edit
+    socialLinkField: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+        marginBottom: Spacing.sm, backgroundColor: Colors.surface,
+        borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.md,
+        borderWidth: 1, borderColor: Colors.border,
+    },
+    socialLinkInput: {
+        flex: 1, color: Colors.text, fontSize: FontSize.md,
+        paddingVertical: Spacing.sm,
+    },
 });

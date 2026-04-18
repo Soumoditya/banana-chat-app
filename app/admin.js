@@ -1,22 +1,41 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, FlatList, Image } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { sendBroadcast, getAppStats, banUser, unbanUser } from '../services/admin';
-import { searchUsers } from '../services/users';
+import {
+    sendBroadcast, getAppStats, banUser, unbanUser,
+    adminGrantPremium, adminRevokePremium, adminDeletePost,
+    setUserVerified, adminGetUser, getUserPosts,
+} from '../services/admin';
+import { searchUsers, getPendingPremiumRequests, approvePremiumRequest, rejectPremiumRequest } from '../services/users';
 import { getInitials, formatCount } from '../utils/helpers';
+import { PREMIUM_PLANS } from '../utils/premium';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const TABS = [
+    { key: 'premium', icon: 'diamond', label: 'Premium' },
+    { key: 'users', icon: 'people', label: 'Users' },
+    { key: 'broadcast', icon: 'megaphone', label: 'Broadcast' },
+    { key: 'stats', icon: 'stats-chart', label: 'Stats' },
+];
 
 export default function AdminScreen() {
-    const { user, isAdmin } = useAuth();
+    const { user, userProfile, isAdmin } = useAuth();
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState('broadcast');
+    const insets = useSafeAreaInsets();
+    const [activeTab, setActiveTab] = useState('premium');
     const [broadcastMessage, setBroadcastMessage] = useState('');
     const [stats, setStats] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [sending, setSending] = useState(false);
+    const [premiumRequests, setPremiumRequests] = useState([]);
+    const [loadingPremium, setLoadingPremium] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [actionLoading, setActionLoading] = useState({});
 
     useEffect(() => {
         if (!isAdmin) {
@@ -24,6 +43,7 @@ export default function AdminScreen() {
             router.back();
             return;
         }
+        loadPremiumRequests();
         loadStats();
     }, []);
 
@@ -32,12 +52,57 @@ export default function AdminScreen() {
         setStats(appStats);
     };
 
+    const loadPremiumRequests = async () => {
+        try {
+            setLoadingPremium(true);
+            const requests = await getPendingPremiumRequests();
+            setPremiumRequests(requests);
+        } catch (err) {
+            console.error('Premium requests error:', err);
+        } finally {
+            setLoadingPremium(false);
+        }
+    };
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await Promise.all([loadPremiumRequests(), loadStats()]);
+        setRefreshing(false);
+    }, []);
+
+    // ─── Quick Actions (no confirmation dialogs for speed) ───
+
+    const quickApprove = async (requestId, displayName) => {
+        setActionLoading(prev => ({ ...prev, [requestId]: 'approving' }));
+        try {
+            await approvePremiumRequest(requestId, user.uid);
+            setPremiumRequests(prev => prev.filter(r => r.id !== requestId));
+            Alert.alert('✅ Done', `${displayName} is now premium!`);
+        } catch (err) {
+            Alert.alert('Error', err.message);
+        } finally {
+            setActionLoading(prev => ({ ...prev, [requestId]: null }));
+        }
+    };
+
+    const quickReject = async (requestId, displayName) => {
+        setActionLoading(prev => ({ ...prev, [requestId]: 'rejecting' }));
+        try {
+            await rejectPremiumRequest(requestId, user.uid);
+            setPremiumRequests(prev => prev.filter(r => r.id !== requestId));
+        } catch (err) {
+            Alert.alert('Error', err.message);
+        } finally {
+            setActionLoading(prev => ({ ...prev, [requestId]: null }));
+        }
+    };
+
     const handleBroadcast = async () => {
         if (!broadcastMessage.trim()) return;
         try {
             setSending(true);
             await sendBroadcast(user.uid, broadcastMessage.trim());
-            Alert.alert('Broadcast Sent', 'Your message has been sent to all users!');
+            Alert.alert('✅ Sent', 'Broadcast sent to all users!');
             setBroadcastMessage('');
         } catch (err) {
             Alert.alert('Error', err.message);
@@ -56,135 +121,419 @@ export default function AdminScreen() {
         }
     };
 
-    const handleBan = async (userId) => {
-        Alert.alert('Ban User', 'Are you sure you want to ban this user?', [
+    // ─── User Quick Actions ───
+
+    const quickBan = async (userId, username) => {
+        Alert.alert('Ban @' + username + '?', 'They won\'t be able to use the app.', [
             { text: 'Cancel', style: 'cancel' },
             {
-                text: 'Ban', style: 'destructive', onPress: async () => {
+                text: 'Ban',
+                style: 'destructive',
+                onPress: async () => {
+                    setActionLoading(prev => ({ ...prev, [userId]: 'banning' }));
                     await banUser(userId);
-                    Alert.alert('Done', 'User has been banned');
-                    handleSearch(searchQuery);
-                }
+                    setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isBanned: true } : u));
+                    setActionLoading(prev => ({ ...prev, [userId]: null }));
+                },
             },
         ]);
     };
 
+    const quickUnban = async (userId) => {
+        setActionLoading(prev => ({ ...prev, [userId]: 'unbanning' }));
+        await unbanUser(userId);
+        setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isBanned: false } : u));
+        setActionLoading(prev => ({ ...prev, [userId]: null }));
+    };
+
+    const quickVerify = async (userId) => {
+        setActionLoading(prev => ({ ...prev, [`v_${userId}`]: true }));
+        await setUserVerified(userId, true);
+        setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isVerified: true } : u));
+        setActionLoading(prev => ({ ...prev, [`v_${userId}`]: null }));
+    };
+
+    const quickUnverify = async (userId) => {
+        setActionLoading(prev => ({ ...prev, [`v_${userId}`]: true }));
+        await setUserVerified(userId, false);
+        setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isVerified: false } : u));
+        setActionLoading(prev => ({ ...prev, [`v_${userId}`]: null }));
+    };
+
+    const showGrantPremiumOptions = (userId, username) => {
+        Alert.alert(
+            'Grant Premium to @' + username,
+            'Select plan to grant (30 days):',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: '🔵 Standard ₹99', onPress: () => grantPremium(userId, 'standard') },
+                { text: '🥇 Premium ₹199', onPress: () => grantPremium(userId, 'premium') },
+                { text: '🥇 Premium+ ₹299', onPress: () => grantPremium(userId, 'premium_plus') },
+                { text: '🟣 Elite ₹399', onPress: () => grantPremium(userId, 'elite') },
+                { text: '🍌 Super ₹499', onPress: () => grantPremium(userId, 'super') },
+                { text: '🖤 VIP ₹999', onPress: () => grantPremium(userId, 'vip') },
+            ]
+        );
+    };
+
+    const grantPremium = async (userId, planId) => {
+        setActionLoading(prev => ({ ...prev, [`p_${userId}`]: true }));
+        try {
+            await adminGrantPremium(userId, planId, 30);
+            setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isPremium: true, premiumPlan: planId } : u));
+            Alert.alert('✅ Done', `Premium ${planId} granted!`);
+        } catch (err) {
+            Alert.alert('Error', err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`p_${userId}`]: null }));
+    };
+
+    const quickRevokePremium = async (userId) => {
+        setActionLoading(prev => ({ ...prev, [`p_${userId}`]: true }));
+        try {
+            await adminRevokePremium(userId);
+            setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isPremium: false, premiumPlan: null } : u));
+        } catch (err) {
+            Alert.alert('Error', err.message);
+        }
+        setActionLoading(prev => ({ ...prev, [`p_${userId}`]: null }));
+    };
+
+    // ─── Render ───
+
+    const renderPremiumTab = () => (
+        <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>👑 Pending Requests</Text>
+                <TouchableOpacity onPress={loadPremiumRequests} style={styles.refreshBtn}>
+                    <Ionicons name="refresh" size={20} color={Colors.primary} />
+                </TouchableOpacity>
+            </View>
+
+            {loadingPremium ? (
+                <ActivityIndicator size="large" color={Colors.primary} style={{ padding: 40 }} />
+            ) : premiumRequests.length === 0 ? (
+                <View style={styles.emptyState}>
+                    <Ionicons name="checkmark-done-circle" size={48} color={Colors.textTertiary} />
+                    <Text style={styles.emptyText}>No pending requests</Text>
+                    <Text style={styles.emptySubtext}>All caught up! 🎉</Text>
+                </View>
+            ) : (
+                premiumRequests.map((req) => {
+                    const plan = PREMIUM_PLANS[req.planId];
+                    const loading = actionLoading[req.id];
+                    const requestTime = req.requestedAt?.seconds
+                        ? new Date(req.requestedAt.seconds * 1000).toLocaleString()
+                        : 'Just now';
+
+                    return (
+                        <View key={req.id} style={[styles.requestCard, { borderLeftColor: plan?.badgeColor || Colors.primary }]}>
+                            <View style={styles.requestHeader}>
+                                {req.avatar ? (
+                                    <Image source={{ uri: req.avatar }} style={styles.reqAvatar} />
+                                ) : (
+                                    <View style={[styles.reqAvatar, styles.avatarPlaceholder]}>
+                                        <Text style={styles.avatarInitials}>{getInitials(req.displayName)}</Text>
+                                    </View>
+                                )}
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.reqName}>{req.displayName}</Text>
+                                    <Text style={styles.reqUsername}>@{req.username}</Text>
+                                </View>
+                                <View style={[styles.planBadge, { backgroundColor: (plan?.badgeColor || Colors.primary) + '20' }]}>
+                                    <Text style={[styles.planBadgeText, { color: plan?.badgeColor || Colors.primary }]}>
+                                        {plan?.name || req.planId}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.requestDetails}>
+                                <Text style={styles.detailText}>
+                                    💰 ₹{req.amount} via {req.paymentMethod?.toUpperCase()}  •  🕐 {requestTime}
+                                </Text>
+                            </View>
+
+                            {/* ONE-TAP ACTIONS */}
+                            <View style={styles.requestActions}>
+                                <TouchableOpacity
+                                    style={styles.rejectBtn}
+                                    onPress={() => quickReject(req.id, req.displayName)}
+                                    disabled={!!loading}
+                                >
+                                    {loading === 'rejecting' ? (
+                                        <ActivityIndicator size="small" color={Colors.error} />
+                                    ) : (
+                                        <>
+                                            <Ionicons name="close" size={18} color={Colors.error} />
+                                            <Text style={styles.rejectBtnText}>Reject</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.approveBtn}
+                                    onPress={() => quickApprove(req.id, req.displayName)}
+                                    disabled={!!loading}
+                                >
+                                    {loading === 'approving' ? (
+                                        <ActivityIndicator size="small" color="#000" />
+                                    ) : (
+                                        <>
+                                            <Ionicons name="checkmark-circle" size={18} color="#000" />
+                                            <Text style={styles.approveBtnText}>Approve</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    );
+                })
+            )}
+        </View>
+    );
+
+    const renderUsersTab = () => (
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>👥 User Management</Text>
+            <Text style={styles.sectionDesc}>Search users • Ban/Unban • Verify • Grant/Revoke Premium</Text>
+            <TextInput
+                style={styles.searchInput}
+                placeholder="Search by username or name..."
+                placeholderTextColor={Colors.textTertiary}
+                value={searchQuery}
+                onChangeText={handleSearch}
+            />
+            {searchResults.map((u) => (
+                <View key={u.id} style={styles.userCard}>
+                    {/* User Info Row */}
+                    <View style={styles.userInfoRow}>
+                        {u.avatar ? (
+                            <Image source={{ uri: u.avatar }} style={styles.userAvatar} />
+                        ) : (
+                            <View style={[styles.userAvatar, styles.avatarPlaceholder]}>
+                                <Text style={styles.avatarInitials}>{getInitials(u.displayName)}</Text>
+                            </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Text style={styles.userName}>{u.displayName}</Text>
+                                {u.isVerified && <Ionicons name="checkmark-circle" size={14} color="#1DA1F2" />}
+                                {u.isPremium && <Ionicons name="diamond" size={14} color="#A855F7" />}
+                                {u.isBanned && <Text style={styles.bannedTag}>BANNED</Text>}
+                                {u.isAdmin && <Text style={styles.adminTag}>ADMIN</Text>}
+                            </View>
+                            <Text style={styles.userUsername}>@{u.username}</Text>
+                            {u.isPremium && (
+                                <Text style={styles.userPlanText}>
+                                    Plan: {PREMIUM_PLANS[u.premiumPlan]?.name || u.premiumPlan || 'Unknown'}
+                                </Text>
+                            )}
+                        </View>
+                        <TouchableOpacity
+                            style={styles.viewProfileBtn}
+                            onPress={() => router.push(`/user/${u.id}`)}
+                        >
+                            <Ionicons name="eye-outline" size={16} color={Colors.primary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Quick Action Buttons */}
+                    <View style={styles.userActionsGrid}>
+                        {/* Ban / Unban */}
+                        {u.isBanned ? (
+                            <TouchableOpacity
+                                style={[styles.actionChip, styles.chipSuccess]}
+                                onPress={() => quickUnban(u.id)}
+                                disabled={!!actionLoading[u.id]}
+                            >
+                                <Ionicons name="checkmark-circle-outline" size={14} color={Colors.success} />
+                                <Text style={[styles.chipText, { color: Colors.success }]}>Unban</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.actionChip, styles.chipDanger]}
+                                onPress={() => quickBan(u.id, u.username)}
+                                disabled={!!actionLoading[u.id]}
+                            >
+                                <Ionicons name="ban-outline" size={14} color={Colors.error} />
+                                <Text style={[styles.chipText, { color: Colors.error }]}>Ban</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Verify / Unverify */}
+                        {u.isVerified ? (
+                            <TouchableOpacity
+                                style={[styles.actionChip, styles.chipWarning]}
+                                onPress={() => quickUnverify(u.id)}
+                                disabled={!!actionLoading[`v_${u.id}`]}
+                            >
+                                <Ionicons name="close-circle-outline" size={14} color="#F59E0B" />
+                                <Text style={[styles.chipText, { color: '#F59E0B' }]}>Unverify</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.actionChip, styles.chipInfo]}
+                                onPress={() => quickVerify(u.id)}
+                                disabled={!!actionLoading[`v_${u.id}`]}
+                            >
+                                <Ionicons name="checkmark-circle" size={14} color="#1DA1F2" />
+                                <Text style={[styles.chipText, { color: '#1DA1F2' }]}>Verify</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* Premium Grant / Revoke / Change */}
+                        {u.isPremium ? (
+                            <>
+                                <TouchableOpacity
+                                    style={[styles.actionChip, styles.chipPremium]}
+                                    onPress={() => showGrantPremiumOptions(u.id, u.username)}
+                                    disabled={!!actionLoading[`p_${u.id}`]}
+                                >
+                                    <Ionicons name="swap-horizontal" size={14} color="#A855F7" />
+                                    <Text style={[styles.chipText, { color: '#A855F7' }]}>Change Plan</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.actionChip, styles.chipDanger]}
+                                    onPress={() => quickRevokePremium(u.id)}
+                                    disabled={!!actionLoading[`p_${u.id}`]}
+                                >
+                                    <Ionicons name="diamond-outline" size={14} color={Colors.error} />
+                                    <Text style={[styles.chipText, { color: Colors.error }]}>Revoke</Text>
+                                </TouchableOpacity>
+                            </>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.actionChip, styles.chipPremium]}
+                                onPress={() => showGrantPremiumOptions(u.id, u.username)}
+                                disabled={!!actionLoading[`p_${u.id}`]}
+                            >
+                                <Ionicons name="diamond" size={14} color="#A855F7" />
+                                <Text style={[styles.chipText, { color: '#A855F7' }]}>Grant</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            ))}
+            {searchQuery.length >= 2 && searchResults.length === 0 && (
+                <Text style={styles.emptyText}>No users found</Text>
+            )}
+        </View>
+    );
+
+    const renderBroadcastTab = () => (
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>📢 Broadcast Message</Text>
+            <Text style={styles.sectionDesc}>Send a message to all Banana Chat users instantly</Text>
+            <TextInput
+                style={styles.broadcastInput}
+                placeholder="Type your broadcast message..."
+                placeholderTextColor={Colors.textTertiary}
+                value={broadcastMessage}
+                onChangeText={setBroadcastMessage}
+                multiline
+                maxLength={500}
+            />
+            <Text style={styles.charCount}>{broadcastMessage.length}/500</Text>
+            <TouchableOpacity
+                style={[styles.sendBtn, (!broadcastMessage.trim() || sending) && styles.sendBtnDisabled]}
+                onPress={handleBroadcast}
+                disabled={!broadcastMessage.trim() || sending}
+            >
+                <Ionicons name="megaphone" size={20} color="#000" />
+                <Text style={styles.sendBtnText}>{sending ? 'Sending...' : 'Send Broadcast'}</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderStatsTab = () => (
+        <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>📊 App Statistics</Text>
+                <TouchableOpacity onPress={loadStats} style={styles.refreshBtn}>
+                    <Ionicons name="refresh" size={20} color={Colors.primary} />
+                </TouchableOpacity>
+            </View>
+            <View style={styles.statsGrid}>
+                {[
+                    { value: stats?.totalUsers || 0, label: 'Users', icon: 'people', color: '#3B82F6' },
+                    { value: stats?.totalPosts || 0, label: 'Posts', icon: 'document-text', color: '#10B981' },
+                    { value: stats?.totalChats || 0, label: 'Chats', icon: 'chatbubbles', color: '#F59E0B' },
+                    { value: stats?.premiumUsers || 0, label: 'Premium', icon: 'diamond', color: '#A855F7' },
+                    { value: stats?.bannedUsers || 0, label: 'Banned', icon: 'ban', color: '#EF4444' },
+                ].map((item, idx) => (
+                    <View key={idx} style={styles.statCard}>
+                        <Ionicons name={item.icon} size={24} color={item.color} />
+                        <Text style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
+                        <Text style={styles.statLabel}>{item.label}</Text>
+                    </View>
+                ))}
+            </View>
+        </View>
+    );
+
     return (
-        <ScrollView style={styles.container}>
+        <ScrollView
+            style={[styles.container, { paddingTop: insets.top }]}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+            refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+            }
+        >
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={24} color={Colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>🛡️ Admin Panel</Text>
-                <View style={{ width: 24 }} />
+                <View style={styles.headerCenter}>
+                    <Text style={styles.headerTitle}>🛡️ Admin Panel</Text>
+                    <Text style={styles.headerSubtitle}>@{userProfile?.username}</Text>
+                </View>
+                <View style={{ width: 40 }} />
             </View>
+
+            {/* Premium notification banner */}
+            {premiumRequests.length > 0 && activeTab !== 'premium' && (
+                <TouchableOpacity
+                    style={styles.notificationBanner}
+                    onPress={() => setActiveTab('premium')}
+                >
+                    <Ionicons name="diamond" size={18} color="#000" />
+                    <Text style={styles.notificationText}>
+                        {premiumRequests.length} pending premium request{premiumRequests.length > 1 ? 's' : ''}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color="#000" />
+                </TouchableOpacity>
+            )}
 
             {/* Tabs */}
             <View style={styles.tabs}>
-                {['broadcast', 'users', 'stats'].map((tab) => (
+                {TABS.map((tab) => (
                     <TouchableOpacity
-                        key={tab}
-                        style={[styles.tab, activeTab === tab && styles.tabActive]}
-                        onPress={() => setActiveTab(tab)}
+                        key={tab.key}
+                        style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+                        onPress={() => setActiveTab(tab.key)}
                     >
-                        <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        <Ionicons
+                            name={tab.icon}
+                            size={18}
+                            color={activeTab === tab.key ? Colors.primary : Colors.textTertiary}
+                        />
+                        <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                            {tab.label}
                         </Text>
+                        {tab.key === 'premium' && premiumRequests.length > 0 && (
+                            <View style={styles.tabBadge}>
+                                <Text style={styles.tabBadgeText}>{premiumRequests.length}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
                 ))}
             </View>
 
-            {/* Broadcast */}
-            {activeTab === 'broadcast' && (
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>📢 Send Broadcast</Text>
-                    <Text style={styles.sectionDesc}>Send a message to all Banana Chat users</Text>
-                    <TextInput
-                        style={styles.broadcastInput}
-                        placeholder="Type your broadcast message..."
-                        placeholderTextColor={Colors.textTertiary}
-                        value={broadcastMessage}
-                        onChangeText={setBroadcastMessage}
-                        multiline
-                        maxLength={500}
-                    />
-                    <Text style={styles.charCount}>{broadcastMessage.length}/500</Text>
-                    <TouchableOpacity
-                        style={[styles.sendBtn, (!broadcastMessage.trim() || sending) && styles.sendBtnDisabled]}
-                        onPress={handleBroadcast}
-                        disabled={!broadcastMessage.trim() || sending}
-                    >
-                        <Ionicons name="megaphone" size={20} color={Colors.textInverse} />
-                        <Text style={styles.sendBtnText}>{sending ? 'Sending...' : 'Send Broadcast'}</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-
-            {/* User Management */}
-            {activeTab === 'users' && (
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>👥 User Management</Text>
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Search users..."
-                        placeholderTextColor={Colors.textTertiary}
-                        value={searchQuery}
-                        onChangeText={handleSearch}
-                    />
-                    {searchResults.map((u) => (
-                        <View key={u.id} style={styles.userItem}>
-                            {u.avatar ? (
-                                <Image source={{ uri: u.avatar }} style={styles.userAvatar} />
-                            ) : (
-                                <View style={[styles.userAvatar, styles.avatarPlaceholder]}>
-                                    <Text style={styles.avatarInitials}>{getInitials(u.displayName)}</Text>
-                                </View>
-                            )}
-                            <View style={styles.userInfo}>
-                                <Text style={styles.userName}>{u.displayName}</Text>
-                                <Text style={styles.userUsername}>@{u.username}</Text>
-                            </View>
-                            <View style={styles.userActions}>
-                                {u.isBanned ? (
-                                    <TouchableOpacity style={styles.unbanBtn} onPress={() => unbanUser(u.id)}>
-                                        <Text style={styles.unbanText}>Unban</Text>
-                                    </TouchableOpacity>
-                                ) : (
-                                    <TouchableOpacity style={styles.banBtn} onPress={() => handleBan(u.id)}>
-                                        <Text style={styles.banText}>Ban</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        </View>
-                    ))}
-                </View>
-            )}
-
-            {/* Stats */}
-            {activeTab === 'stats' && (
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>📊 App Statistics</Text>
-                    <View style={styles.statsGrid}>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statValue}>{stats?.totalUsers || 0}</Text>
-                            <Text style={styles.statLabel}>Total Users</Text>
-                        </View>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statValue}>{stats?.totalPosts || 0}</Text>
-                            <Text style={styles.statLabel}>Total Posts</Text>
-                        </View>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statValue}>{stats?.totalChats || 0}</Text>
-                            <Text style={styles.statLabel}>Active Chats</Text>
-                        </View>
-                        <View style={styles.statCard}>
-                            <Text style={styles.statValue}>{stats?.totalStories || 0}</Text>
-                            <Text style={styles.statLabel}>Stories Today</Text>
-                        </View>
-                    </View>
-                </View>
-            )}
+            {/* Tab Content */}
+            {activeTab === 'premium' && renderPremiumTab()}
+            {activeTab === 'users' && renderUsersTab()}
+            {activeTab === 'broadcast' && renderBroadcastTab()}
+            {activeTab === 'stats' && renderStatsTab()}
         </ScrollView>
     );
 }
@@ -192,39 +541,162 @@ export default function AdminScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background },
     header: {
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingHorizontal: Spacing.lg, paddingTop: 50, paddingBottom: Spacing.md,
+        flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
         backgroundColor: Colors.surface, borderBottomWidth: 0.5, borderBottomColor: Colors.border,
     },
+    backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+    headerCenter: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: FontSize.xl, fontWeight: 'bold', color: Colors.primary },
-    tabs: { flexDirection: 'row', backgroundColor: Colors.surface, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
-    tab: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    headerSubtitle: { fontSize: FontSize.xs, color: Colors.textTertiary, marginTop: 2 },
+
+    // Notification banner
+    notificationBanner: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+        backgroundColor: '#FFD700', paddingVertical: 10, paddingHorizontal: Spacing.lg,
+    },
+    notificationText: { color: '#000', fontWeight: '700', fontSize: FontSize.sm },
+
+    // Tabs
+    tabs: {
+        flexDirection: 'row', backgroundColor: Colors.surface,
+        borderBottomWidth: 0.5, borderBottomColor: Colors.border,
+    },
+    tab: {
+        flex: 1, alignItems: 'center', paddingVertical: 12, gap: 2,
+        borderBottomWidth: 2, borderBottomColor: 'transparent', position: 'relative',
+    },
     tabActive: { borderBottomColor: Colors.primary },
-    tabText: { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: '600' },
+    tabText: { color: Colors.textTertiary, fontSize: 11, fontWeight: '600' },
     tabTextActive: { color: Colors.primary },
-    section: { margin: Spacing.lg, backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, padding: Spacing.lg, borderWidth: 0.5, borderColor: Colors.border },
+    tabBadge: {
+        position: 'absolute', top: 4, right: '15%',
+        backgroundColor: Colors.error, borderRadius: 8,
+        minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center',
+    },
+    tabBadgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
+
+    // Section
+    section: {
+        margin: Spacing.md, backgroundColor: Colors.surface,
+        borderRadius: BorderRadius.lg, padding: Spacing.lg,
+        borderWidth: 0.5, borderColor: Colors.border,
+    },
+    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    refreshBtn: { padding: 8, borderRadius: 20, backgroundColor: Colors.surfaceLight },
     sectionTitle: { fontSize: FontSize.lg, fontWeight: 'bold', color: Colors.text, marginBottom: Spacing.xs },
-    sectionDesc: { color: Colors.textSecondary, fontSize: FontSize.sm, marginBottom: Spacing.lg },
-    broadcastInput: { backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.md, padding: Spacing.lg, color: Colors.text, fontSize: FontSize.md, minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: Colors.border },
-    charCount: { color: Colors.textTertiary, fontSize: FontSize.xs, textAlign: 'right', marginTop: Spacing.xs },
-    sendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: Colors.primary, borderRadius: BorderRadius.lg, paddingVertical: Spacing.lg, marginTop: Spacing.md },
-    sendBtnDisabled: { opacity: 0.6 },
-    sendBtnText: { color: Colors.textInverse, fontSize: FontSize.md, fontWeight: '600' },
-    searchInput: { backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, color: Colors.text, fontSize: FontSize.md, marginBottom: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-    userItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.md, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+    sectionDesc: { color: Colors.textSecondary, fontSize: FontSize.xs, marginBottom: Spacing.lg },
+
+    // Premium request cards
+    requestCard: {
+        backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg,
+        padding: Spacing.lg, marginBottom: Spacing.md,
+        borderLeftWidth: 4,
+    },
+    requestHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+    reqAvatar: { width: 44, height: 44, borderRadius: 22 },
+    reqName: { color: Colors.text, fontWeight: '700', fontSize: FontSize.md },
+    reqUsername: { color: Colors.textTertiary, fontSize: FontSize.sm },
+    planBadge: {
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: BorderRadius.full,
+    },
+    planBadgeText: { fontSize: FontSize.xs, fontWeight: '700' },
+    requestDetails: { marginTop: Spacing.sm },
+    detailText: { color: Colors.textSecondary, fontSize: FontSize.xs },
+    requestActions: {
+        flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md,
+        justifyContent: 'flex-end',
+    },
+    rejectBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 16, paddingVertical: 10, borderRadius: BorderRadius.full,
+        backgroundColor: 'rgba(255,61,113,0.1)', borderWidth: 1, borderColor: Colors.error,
+        minWidth: 90, justifyContent: 'center',
+    },
+    rejectBtnText: { color: Colors.error, fontWeight: '600', fontSize: FontSize.sm },
+    approveBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 20, paddingVertical: 10, borderRadius: BorderRadius.full,
+        backgroundColor: '#FFD700', minWidth: 100, justifyContent: 'center',
+    },
+    approveBtnText: { color: '#000', fontWeight: '700', fontSize: FontSize.sm },
+
+    // Empty state
+    emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
+    emptyText: { color: Colors.textTertiary, fontSize: FontSize.md, textAlign: 'center', padding: Spacing.lg },
+    emptySubtext: { color: Colors.textTertiary, fontSize: FontSize.sm },
+
+    // User Management
+    searchInput: {
+        backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg,
+        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+        color: Colors.text, fontSize: FontSize.md,
+        borderWidth: 1, borderColor: Colors.border,
+    },
+    userCard: {
+        backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg,
+        padding: Spacing.md, marginTop: Spacing.md,
+    },
+    userInfoRow: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    },
     userAvatar: { width: 44, height: 44, borderRadius: 22 },
-    avatarPlaceholder: { backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
-    avatarInitials: { color: Colors.primary, fontWeight: 'bold' },
-    userInfo: { flex: 1, marginLeft: Spacing.md },
-    userName: { color: Colors.text, fontSize: FontSize.md, fontWeight: '600' },
-    userUsername: { color: Colors.textSecondary, fontSize: FontSize.sm },
-    userActions: { flexDirection: 'row', gap: Spacing.sm },
-    banBtn: { backgroundColor: 'rgba(255,61,113,0.1)', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.error },
-    banText: { color: Colors.error, fontSize: FontSize.sm, fontWeight: '600' },
-    unbanBtn: { backgroundColor: 'rgba(0,200,83,0.1)', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.success },
-    unbanText: { color: Colors.success, fontSize: FontSize.sm, fontWeight: '600' },
-    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-    statCard: { width: '47%', backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg, padding: Spacing.lg, alignItems: 'center' },
-    statValue: { color: Colors.primary, fontSize: FontSize.xxxl, fontWeight: 'bold' },
-    statLabel: { color: Colors.textSecondary, fontSize: FontSize.sm, marginTop: Spacing.xs },
+    avatarPlaceholder: { backgroundColor: Colors.surface, justifyContent: 'center', alignItems: 'center' },
+    avatarInitials: { color: Colors.primary, fontWeight: 'bold', fontSize: FontSize.md },
+    userName: { color: Colors.text, fontSize: FontSize.md, fontWeight: '700' },
+    userUsername: { color: Colors.textTertiary, fontSize: FontSize.sm },
+    userPlanText: { color: '#A855F7', fontSize: 11, fontWeight: '600', marginTop: 2 },
+    bannedTag: {
+        fontSize: 9, fontWeight: '800', color: '#fff',
+        backgroundColor: Colors.error, paddingHorizontal: 6, paddingVertical: 2,
+        borderRadius: 4, overflow: 'hidden',
+    },
+    adminTag: {
+        fontSize: 9, fontWeight: '800', color: '#000',
+        backgroundColor: '#FFD700', paddingHorizontal: 6, paddingVertical: 2,
+        borderRadius: 4, overflow: 'hidden',
+    },
+    viewProfileBtn: {
+        width: 36, height: 36, borderRadius: 18,
+        backgroundColor: Colors.surface, justifyContent: 'center', alignItems: 'center',
+    },
+
+    // Action chips
+    userActionsGrid: {
+        flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: Spacing.md,
+    },
+    actionChip: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 12, paddingVertical: 6, borderRadius: BorderRadius.full,
+        borderWidth: 1,
+    },
+    chipText: { fontSize: 12, fontWeight: '600' },
+    chipDanger: { borderColor: Colors.error, backgroundColor: 'rgba(239,68,68,0.08)' },
+    chipSuccess: { borderColor: Colors.success, backgroundColor: 'rgba(16,185,129,0.08)' },
+    chipWarning: { borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.08)' },
+    chipInfo: { borderColor: '#1DA1F2', backgroundColor: 'rgba(29,161,242,0.08)' },
+    chipPremium: { borderColor: '#A855F7', backgroundColor: 'rgba(168,85,247,0.08)' },
+
+    // Broadcast
+    broadcastInput: {
+        backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg,
+        padding: Spacing.lg, color: Colors.text, fontSize: FontSize.md,
+        minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: Colors.border,
+    },
+    charCount: { color: Colors.textTertiary, fontSize: FontSize.xs, textAlign: 'right', marginTop: 4 },
+    sendBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+        backgroundColor: '#FFD700', borderRadius: BorderRadius.lg, paddingVertical: Spacing.lg, marginTop: Spacing.md,
+    },
+    sendBtnDisabled: { opacity: 0.5 },
+    sendBtnText: { color: '#000', fontSize: FontSize.md, fontWeight: '700' },
+
+    // Stats
+    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginTop: Spacing.md },
+    statCard: {
+        width: '30%', backgroundColor: Colors.surfaceLight,
+        borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center', gap: 4,
+    },
+    statValue: { fontSize: FontSize.xxl, fontWeight: 'bold' },
+    statLabel: { color: Colors.textSecondary, fontSize: 11 },
 });

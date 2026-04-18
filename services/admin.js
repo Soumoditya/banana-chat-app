@@ -1,10 +1,14 @@
 import {
     doc,
     updateDoc,
+    deleteDoc,
     collection,
     getDocs,
+    getDoc,
+    setDoc,
     query,
     where,
+    orderBy,
     limit,
     serverTimestamp,
 } from 'firebase/firestore';
@@ -74,6 +78,124 @@ export const moderateDeletePost = async (postId) => {
     });
 };
 
+// ─── User Management (Enhanced) ───
+
+/**
+ * Set a user's verification/admin status
+ */
+export const setUserVerified = async (uid, isVerified) => {
+    await updateDoc(doc(db, 'users', uid), {
+        isVerified: isVerified,
+    });
+};
+
+/**
+ * Set a user's admin flag
+ */
+export const setUserAdminFlag = async (uid, isAdmin) => {
+    await updateDoc(doc(db, 'users', uid), {
+        isAdmin: isAdmin,
+        role: isAdmin ? 'admin' : 'user',
+    });
+};
+
+/**
+ * Force update any field on a user profile
+ */
+export const adminUpdateUserField = async (uid, field, value) => {
+    await updateDoc(doc(db, 'users', uid), {
+        [field]: value,
+    });
+};
+
+/**
+ * Delete a user's post permanently
+ */
+export const adminDeletePost = async (postId) => {
+    try {
+        await updateDoc(doc(db, 'posts', postId), {
+            deleted: true,
+            moderatedAt: serverTimestamp(),
+            moderationReason: 'Admin removed',
+        });
+    } catch (err) {
+        // If post doc doesn't support update, try delete
+        console.error('Admin delete post error:', err);
+    }
+};
+
+/**
+ * Get all posts by a specific user
+ */
+export const getUserPosts = async (uid) => {
+    const q = query(
+        collection(db, 'posts'),
+        where('authorId', '==', uid),
+        where('deleted', '==', false),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+/**
+ * Get recent reports / flagged content
+ */
+export const getReportedContent = async () => {
+    try {
+        const q = query(
+            collection(db, 'reports'),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch {
+        return [];
+    }
+};
+
+/**
+ * Reset a user's premium to free
+ */
+export const adminRevokePremium = async (uid) => {
+    await updateDoc(doc(db, 'users', uid), {
+        isPremium: false,
+        premiumPlan: null,
+        premiumExpiresAt: null,
+        premiumActivatedAt: null,
+        premiumPaymentMethod: null,
+    });
+};
+
+/**
+ * Admin grant premium instantly
+ */
+export const adminGrantPremium = async (uid, planId, durationDays = 30) => {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + durationDays);
+
+    await updateDoc(doc(db, 'users', uid), {
+        isPremium: true,
+        premiumPlan: planId,
+        premiumExpiresAt: expiresAt,
+        premiumActivatedAt: serverTimestamp(),
+        premiumPaymentMethod: 'admin_grant',
+    });
+};
+
+/**
+ * Get full user details by uid
+ */
+export const adminGetUser = async (uid) => {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
+        return { id: userDoc.id, ...userDoc.data() };
+    }
+    return null;
+};
+
 // Get app statistics
 export const getAppStats = async () => {
     try {
@@ -84,13 +206,24 @@ export const getAppStats = async () => {
         ));
         const chatsSnapshot = await getDocs(collection(db, 'chats'));
 
+        // Count premium users
+        let premiumCount = 0;
+        let bannedCount = 0;
+        usersSnapshot.docs.forEach(d => {
+            const data = d.data();
+            if (data.isPremium) premiumCount++;
+            if (data.isBanned) bannedCount++;
+        });
+
         return {
             totalUsers: usersSnapshot.size,
             totalPosts: postsSnapshot.size,
             totalChats: chatsSnapshot.size,
+            premiumUsers: premiumCount,
+            bannedUsers: bannedCount,
         };
     } catch (err) {
         console.error('Stats error:', err);
-        return { totalUsers: 0, totalPosts: 0, totalChats: 0 };
+        return { totalUsers: 0, totalPosts: 0, totalChats: 0, premiumUsers: 0, bannedUsers: 0 };
     }
 };

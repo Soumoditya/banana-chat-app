@@ -1,29 +1,17 @@
 import 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { AuthProvider } from '../contexts/AuthContext';
+import { PremiumProvider } from '../contexts/PremiumContext';
+import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
-import { PaperProvider, MD3DarkTheme } from 'react-native-paper';
+
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Colors } from '../utils/theme';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import React from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-const paperTheme = {
-    ...MD3DarkTheme,
-    colors: {
-        ...MD3DarkTheme.colors,
-        primary: Colors.primary,
-        secondary: Colors.secondary,
-        background: Colors.background,
-        surface: Colors.surface,
-        error: Colors.error,
-        onPrimary: Colors.textInverse,
-        onSecondary: Colors.text,
-        onBackground: Colors.text,
-        onSurface: Colors.text,
-    },
-};
+
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -151,42 +139,54 @@ export default function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <SafeAreaProvider>
                 <ErrorBoundary>
-                    <PaperProvider theme={paperTheme}>
+                    <ThemeProvider>
                         <AuthProvider>
-                            <StatusBar style="light" backgroundColor={Colors.background} />
-                            <Stack
-                                screenOptions={{
-                                    headerShown: false,
-                                    contentStyle: { backgroundColor: Colors.background },
-                                    animation: 'slide_from_right',
-                                    gestureEnabled: true,
-                                }}
-                            >
-                                <Stack.Screen name="index" />
-                                <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                                <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-                                <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="user/[id]" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_bottom' }} />
-                                <Stack.Screen name="story/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
-                                <Stack.Screen name="create" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-                                <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="blocked-users" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="notifications-settings" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="close-friends" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="story-archive" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="recently-deleted" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="highlight-editor" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="hide-story-from" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="create-group" options={{ animation: 'slide_from_right' }} />
-                                <Stack.Screen name="followers-list" options={{ animation: 'slide_from_right' }} />
-                            </Stack>
+                            <PremiumProvider>
+                                <ThemedApp />
+                                <Stack
+                                    screenOptions={{
+                                        headerShown: false,
+                                        contentStyle: { backgroundColor: Colors.background },
+                                        animation: 'slide_from_right',
+                                        gestureEnabled: true,
+                                    }}
+                                >
+                                    <Stack.Screen name="index" />
+                                    <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                                    <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                                    <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="user/[id]" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_bottom' }} />
+                                    <Stack.Screen name="story/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
+                                    <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="blocked-users" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="notifications-settings" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="close-friends" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="story-archive" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="recently-deleted" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="highlight-editor" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="hide-story-from" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="create-group" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="add-members" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="followers-list" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="post-feed" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="archived-posts" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="share-post/[id]" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="call/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
+                                </Stack>
+                            </PremiumProvider>
                         </AuthProvider>
-                    </PaperProvider>
+                    </ThemeProvider>
                 </ErrorBoundary>
             </SafeAreaProvider>
         </GestureHandlerRootView>
     );
+}
+
+// Renders StatusBar with correct style based on theme
+function ThemedApp() {
+    const { isDark, colors } = useTheme();
+    return <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />;
 }

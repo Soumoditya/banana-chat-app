@@ -22,7 +22,7 @@ export default function LoginScreen() {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-    const { signIn, error, setError } = useAuth();
+    const { signIn, resetPassword, error, setError } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
 
@@ -41,6 +41,52 @@ export default function LoginScreen() {
             Alert.alert('Login Failed', err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleForgotPassword = async () => {
+        let input = identifier.trim();
+        if (!input) {
+            Alert.alert('Reset Password', 'Enter your email or username in the field above, then tap "Forgot Password?" again.');
+            return;
+        }
+        
+        let emailToReset = input;
+        
+        // If it's a username (no @), look up the email
+        if (!input.includes('@')) {
+            try {
+                const { getUserByUsername, searchUsers } = require('../../services/users');
+                // Try exact username match
+                let userDoc = await getUserByUsername(input);
+                if (!userDoc) {
+                    // Try case-insensitive search
+                    const results = await searchUsers(input);
+                    userDoc = results.find(u => 
+                        (u.username || '').toLowerCase() === input.toLowerCase() ||
+                        (u.usernameLower || '').toLowerCase() === input.toLowerCase()
+                    );
+                }
+                if (userDoc && userDoc.email) {
+                    emailToReset = userDoc.email;
+                } else {
+                    Alert.alert('Not Found', 'No account found with that username. Try your email address instead.');
+                    return;
+                }
+            } catch (err) {
+                Alert.alert('Error', 'Could not look up username. Please enter your email address instead.');
+                return;
+            }
+        }
+        
+        try {
+            await resetPassword(emailToReset);
+            // Mask the email for privacy
+            const parts = emailToReset.split('@');
+            const masked = parts[0].substring(0, 2) + '***@' + parts[1];
+            Alert.alert('✅ Reset Link Sent', `Password reset link sent to ${masked}`);
+        } catch (err) {
+            Alert.alert('Error', err.message);
         }
     };
 
@@ -99,6 +145,10 @@ export default function LoginScreen() {
                             <Text style={styles.errorText} selectable>{error}</Text>
                         </View>
                     )}
+
+                    <TouchableOpacity onPress={handleForgotPassword} style={{ alignSelf: 'flex-end', marginBottom: Spacing.md }}>
+                        <Text style={{ color: Colors.primary, fontSize: FontSize.sm, fontWeight: '600' }}>Forgot Password?</Text>
+                    </TouchableOpacity>
 
                     <TouchableOpacity
                         style={[styles.loginBtn, loading && styles.loginBtnDisabled]}

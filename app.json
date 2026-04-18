@@ -2,11 +2,11 @@
   "expo": {
     "name": "Banana Chat",
     "slug": "banana-chat",
-    "version": "3.1.0",
+    "version": "4.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "bananachat",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -26,9 +26,9 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A0A0A"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnabled": false,
       "package": "com.bananachat.app",
-      "versionCode": 12,
+      "versionCode": 27,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -43,7 +43,57 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FFD60A"
+        }
+      ],
+      [
+        "expo-dynamic-app-icon",
+        {
+          "spiderman": {
+            "image": "./assets/images/icons/spiderman.png",
+            "prerendered": true
+          },
+          "homelander": {
+            "image": "./assets/images/icons/homelander.png",
+            "prerendered": true
+          },
+          "ironman": {
+            "image": "./assets/images/icons/ironman.png",
+            "prerendered": true
+          },
+          "emperor_viltrum": {
+            "image": "./assets/images/icons/emperor_viltrum.png",
+            "prerendered": true
+          },
+          "ben10": {
+            "image": "./assets/images/icons/ben10.png",
+            "prerendered": true
+          },
+          "invincible": {
+            "image": "./assets/images/icons/invincible.png",
+            "prerendered": true
+          },
+          "viltrum_mark": {
+            "image": "./assets/images/icons/viltrum-mark.png",
+            "prerendered": true
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {},

@@ -2,6 +2,21 @@ export const ADMIN_EMAIL = 'soumodityapramanik@gmail.com';
 export const ADMIN_USERNAME = 'X';
 export const ADMIN_PASSWORD = '79802%';
 
+// ─── Admin Users (usernames with full admin power) ───
+export const ADMIN_USERNAMES = ['xdd', 'inactiveritesh'];
+
+/**
+ * Check if a user profile belongs to an admin
+ * Checks: isAdmin flag, email match, or username in admin list
+ */
+export const isUserAdmin = (profile) => {
+    if (!profile) return false;
+    if (profile.isAdmin === true) return true;
+    if (profile.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) return true;
+    const uname = (profile.username || '').toLowerCase();
+    return ADMIN_USERNAMES.some(a => a.toLowerCase() === uname);
+};
+
 export const APP_NAME = 'Banana Chat';
 export const APP_VERSION = '1.0.0';
 
@@ -17,6 +32,7 @@ export const MESSAGE_TYPES = {
     EMOJI: 'emoji',
     POLL: 'poll',
     SYSTEM: 'system',
+    FILE: 'file',
 };
 
 export const POST_TYPES = {

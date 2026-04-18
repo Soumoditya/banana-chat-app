@@ -1,6 +1,34 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null"
+    "presence": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "typing": {
+      "$chatId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "messages": {
+      "$chatId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "streaks": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "broadcast": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
   }
 }
