@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { getUserProfile } from '../services/users';
 import { useAuth } from '../contexts/AuthContext';
 import { formatTime, getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useToast } from '../contexts/ToastContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -16,6 +17,7 @@ export default function HighlightViewerScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showConfirm } = useToast();
     const [stories, setStories] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [author, setAuthor] = useState(null);
@@ -74,15 +76,13 @@ export default function HighlightViewerScreen() {
 
     const handleDeleteHighlight = () => {
         if (!highlightId) return;
-        Alert.alert('Delete Highlight', 'Are you sure? This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete', style: 'destructive', onPress: async () => {
-                    await deleteHighlight(highlightId);
-                    router.back();
-                }
+        showConfirm('Delete Highlight', 'Are you sure? This cannot be undone.',
+            async () => {
+                await deleteHighlight(highlightId);
+                router.back();
             },
-        ]);
+            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+        );
     };
 
     const current = stories[currentIndex];

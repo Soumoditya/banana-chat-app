@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     ScrollView,
     Image,
-    Alert,
     ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -25,6 +24,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMaxMedia, getMaxPostLength, isPremiumActive } from '../../utils/premium';
+import { useToast } from '../../contexts/ToastContext';
 
 const STORY_BG_COLORS = [
     '#1a1a2e', '#16213e', '#0f3460', '#e94560', '#533483',
@@ -42,6 +42,7 @@ export default function CreateTab() {
     const { themedColors: C, activeFont, iosEmojiEnabled } = usePremium();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [activeTab, setActiveTab] = useState('post');
     const [content, setContent] = useState('');
@@ -121,7 +122,7 @@ export default function CreateTab() {
         try {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Required', 'Please allow access to your photo library.');
+                showToast('Please allow access to your photo library.', 'warning', 'Permission Required');
                 return;
             }
 
@@ -147,15 +148,11 @@ export default function CreateTab() {
                 const newTotal = media.length + result.assets.length;
                 if (newTotal > maxMedia) {
                     const premium = isPremiumActive(userProfile);
-                    Alert.alert(
-                        'Media Limit',
-                        premium
+                    showToast(
+                        isPremiumActive(userProfile)
                             ? `Your plan allows up to ${maxMedia} media. You've selected ${newTotal}.`
                             : `Free accounts can add up to ${maxMedia} media. Upgrade to Premium for up to 20!`,
-                        premium ? [{ text: 'OK' }] : [
-                            { text: 'OK' },
-                            { text: 'Go Premium ✨', onPress: () => router.push('/premium') },
-                        ]
+                        'warning', 'Media Limit'
                     );
                     // Still add up to the limit
                     const allowed = result.assets.slice(0, maxMedia - media.length);
@@ -172,7 +169,7 @@ export default function CreateTab() {
             }
         } catch (err) {
             console.error('Media picker error:', err);
-            Alert.alert('Media Error', `Failed to open gallery: ${err.message}`);
+            showToast(`Failed to open gallery: ${err.message}`, 'error', 'Media Error');
         }
     };
 
@@ -195,14 +192,14 @@ export default function CreateTab() {
 
     const handleCreatePost = async () => {
         if (!content.trim() && media.length === 0 && postType !== POST_TYPES.POLL) {
-            Alert.alert('Empty Post', 'Add a caption, media, or create a poll.');
+            showToast('Add a caption, media, or create a poll.', 'warning', 'Empty Post');
             return;
         }
 
         if (postType === POST_TYPES.POLL) {
             const validOptions = pollOptions.filter(o => o.trim());
             if (validOptions.length < 2) {
-                Alert.alert('Error', 'Add at least 2 poll options');
+                showToast('Add at least 2 poll options', 'error');
                 return;
             }
         }
@@ -222,7 +219,7 @@ export default function CreateTab() {
                     }
                     mediaUrls.push({ uri: uploaded.url, type: isVideo ? 'video' : 'image' });
                 } catch (uploadErr) {
-                    Alert.alert('Upload Failed', `Media ${i + 1} failed: ${uploadErr.message}`);
+                    showToast(`Media ${i + 1} failed: ${uploadErr.message}`, 'error', 'Upload Failed');
                     setLoading(false);
                     return;
                 }
@@ -264,7 +261,7 @@ export default function CreateTab() {
 
         } catch (err) {
             console.error('Post creation error:', err);
-            Alert.alert('Post Failed', `${err.message}\n\nPlease try again.`);
+            showToast(`${err.message}\n\nPlease try again.`, 'error', 'Post Failed');
         } finally {
             setLoading(false);
         }
@@ -272,7 +269,7 @@ export default function CreateTab() {
 
     const handleCreateStory = async () => {
         if (media.length === 0 && !content.trim()) {
-            Alert.alert('Error', 'Add a photo/video or write some text for your story');
+            showToast('Add a photo/video or write some text for your story', 'warning');
             return;
         }
 
@@ -293,7 +290,7 @@ export default function CreateTab() {
                         throw new Error('Upload returned empty URL');
                     }
                 } catch (uploadErr) {
-                    Alert.alert('Upload Failed', `Could not upload: ${uploadErr.message}`);
+                    showToast(`Could not upload: ${uploadErr.message}`, 'error', 'Upload Failed');
                     setLoading(false);
                     return;
                 }
@@ -323,7 +320,7 @@ export default function CreateTab() {
 
         } catch (err) {
             console.error('Story creation error:', err);
-            Alert.alert('Story Failed', `${err.message}\n\nPlease try again.`);
+            showToast(`${err.message}\n\nPlease try again.`, 'error', 'Story Failed');
         } finally {
             setLoading(false);
         }
@@ -459,7 +456,7 @@ export default function CreateTab() {
                                         const file = result.assets[0];
                                         setMedia(prev => [...prev, { uri: file.uri, type: 'document', name: file.name, size: file.size }]);
                                     }
-                                } catch(e) { Alert.alert('Error', e.message); }
+                                } catch(e) { showToast(e.message, 'error'); }
                             }}
                         >
                             <Ionicons name="document-attach" size={24} color={Colors.primary} />

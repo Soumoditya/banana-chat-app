@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-    View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput, Alert,
+    View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,11 +9,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getArchivedStories, createHighlight, updateHighlight, deleteHighlight, getHighlights } from '../services/stories';
 import { HIGHLIGHT_TYPES, STORY_LABELS } from '../utils/constants';
+import { useToast } from '../contexts/ToastContext';
 
 export default function HighlightEditorScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const params = useLocalSearchParams();
     const editId = params?.editId;
 
@@ -52,27 +54,25 @@ export default function HighlightEditorScreen() {
 
     const handleSave = async () => {
         if (!name.trim()) {
-            Alert.alert('Error', 'Please give your highlight a name');
+            showToast('Please give your highlight a name', 'error');
             return;
         }
         if (selectedIds.length === 0) {
-            Alert.alert('Error', 'Select at least one story');
+            showToast('Select at least one story', 'error');
             return;
         }
         try {
             setSaving(true);
             const coverStory = archivedStories.find(s => s.id === selectedIds[0]);
             if (editId) {
-                // Update existing
                 await updateHighlight(editId, {
                     name: name.trim(),
                     type,
                     coverImage: coverStory?.media || '',
                     storyIds: selectedIds,
                 });
-                Alert.alert('Updated!', 'Highlight updated!', [
-                    { text: 'OK', onPress: () => router.back() }
-                ]);
+                showToast('Highlight updated!', 'success', 'Updated!');
+                router.back();
             } else {
                 await createHighlight({
                     authorId: user.uid,
@@ -81,12 +81,11 @@ export default function HighlightEditorScreen() {
                     coverImage: coverStory?.media || '',
                     storyIds: selectedIds,
                 });
-                Alert.alert('Created!', `${type === HIGHLIGHT_TYPES.SPOTLIGHT ? 'Spotlight' : 'Memory'} created!`, [
-                    { text: 'OK', onPress: () => router.back() }
-                ]);
+                showToast(`${type === HIGHLIGHT_TYPES.SPOTLIGHT ? 'Spotlight' : 'Memory'} created!`, 'success', 'Created!');
+                router.back();
             }
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setSaving(false);
         }
@@ -116,15 +115,16 @@ export default function HighlightEditorScreen() {
                 <TouchableOpacity
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#EF4444' }}
                     onPress={() => {
-                        Alert.alert('Delete Highlight', 'Are you sure you want to delete this highlight?', [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: async () => {
+                        showConfirm('Delete Highlight', 'Are you sure you want to delete this highlight?',
+                            async () => {
                                 try {
                                     await deleteHighlight(editId);
-                                    Alert.alert('Deleted', 'Highlight removed!', [{ text: 'OK', onPress: () => router.back() }]);
-                                } catch (err) { Alert.alert('Error', err.message); }
-                            }},
-                        ]);
+                                    showToast('Highlight removed!', 'success', 'Deleted');
+                                    router.back();
+                                } catch (err) { showToast(err.message, 'error'); }
+                            },
+                            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+                        );
                     }}
                 >
                     <Ionicons name="trash-outline" size={16} color="#EF4444" />

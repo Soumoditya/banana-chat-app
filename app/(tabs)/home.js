@@ -267,34 +267,25 @@ export default function HomeScreen() {
     };
 
     const handleShare = async (postId) => {
-        Alert.alert(
-            "Share Post",
-            "What would you like to do?",
-            [
-                {
-                    text: "Send to Chat",
-                    onPress: () => router.push(`/share-post/${postId}`),
-                },
-                {
-                    text: "Share via...",
-                    onPress: async () => {
-                        try {
-                            const postData = await getPost(postId);
-                            let shareMsg = postData?.content || '';
-                            shareMsg = shareMsg ? `${shareMsg}\n\n` : '';
-                            shareMsg += `Shared from Banana Chat 🍌`;
-                            const shareOpts = { message: shareMsg };
-                            if (postData?.media?.[0]) {
-                                const mediaUri = typeof postData.media[0] === 'string' ? postData.media[0] : postData.media[0]?.uri;
-                                if (mediaUri) shareOpts.url = mediaUri;
-                            }
-                            await Share.share(shareOpts);
-                            await incrementShareCount(postId);
-                        } catch {}
+        showConfirm('Share Post', 'What would you like to do?',
+            () => router.push(`/share-post/${postId}`),
+            { confirmText: 'Send to Chat', cancelText: 'Share via...', icon: 'share-outline',
+              onCancel: async () => {
+                try {
+                    const postData = await getPost(postId);
+                    let shareMsg = postData?.content || '';
+                    shareMsg = shareMsg ? `${shareMsg}\n\n` : '';
+                    shareMsg += `Shared from Banana Chat 🍌`;
+                    const shareOpts = { message: shareMsg };
+                    if (postData?.media?.[0]) {
+                        const mediaUri = typeof postData.media[0] === 'string' ? postData.media[0] : postData.media[0]?.uri;
+                        if (mediaUri) shareOpts.url = mediaUri;
                     }
-                },
-                { text: "Cancel", style: "cancel" }
-            ]
+                    await Share.share(shareOpts);
+                    await incrementShareCount(postId);
+                } catch {}
+              }
+            }
         );
     };
 

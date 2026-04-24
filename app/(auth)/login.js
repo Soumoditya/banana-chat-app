@@ -8,7 +8,6 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -17,6 +16,7 @@ import { getUserByUsername, searchUsers } from '../../services/users';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function LoginScreen() {
     const [identifier, setIdentifier] = useState('');
@@ -26,10 +26,11 @@ export default function LoginScreen() {
     const { signIn, resetPassword, error, setError } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
 
     const handleLogin = async () => {
         if (!identifier.trim() || !password) {
-            Alert.alert('Error', 'Please fill in all fields');
+            showToast('Please fill in all fields', 'error');
             return;
         }
 
@@ -39,7 +40,7 @@ export default function LoginScreen() {
             await signIn(identifier.trim(), password);
             router.replace('/(tabs)/home');
         } catch (err) {
-            Alert.alert('Login Failed', err.message);
+            showToast(err.message, 'error', 'Login Failed');
         } finally {
             setLoading(false);
         }
@@ -48,7 +49,7 @@ export default function LoginScreen() {
     const handleForgotPassword = async () => {
         let input = identifier.trim();
         if (!input) {
-            Alert.alert('Reset Password', 'Enter your email or username in the field above, then tap "Forgot Password?" again.');
+            showToast('Enter your email or username in the field above, then tap "Forgot Password?" again.', 'info', 'Reset Password');
             return;
         }
         
@@ -70,11 +71,11 @@ export default function LoginScreen() {
                 if (userDoc && userDoc.email) {
                     emailToReset = userDoc.email;
                 } else {
-                    Alert.alert('Not Found', 'No account found with that username. Try your email address instead.');
+                    showToast('No account found with that username. Try your email address instead.', 'warning', 'Not Found');
                     return;
                 }
             } catch (err) {
-                Alert.alert('Error', 'Could not look up username. Please enter your email address instead.');
+                showToast('Could not look up username. Please enter your email address instead.', 'error');
                 return;
             }
         }
@@ -84,9 +85,9 @@ export default function LoginScreen() {
             // Mask the email for privacy
             const parts = emailToReset.split('@');
             const masked = parts[0].substring(0, 2) + '***@' + parts[1];
-            Alert.alert('✅ Reset Link Sent', `Password reset link sent to ${masked}`);
+            showToast(`Password reset link sent to ${masked}`, 'success', '✅ Reset Link Sent');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
     };
 

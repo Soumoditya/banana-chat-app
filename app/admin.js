@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, RefreshControl, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, RefreshControl, ActivityIndicator, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -15,6 +15,7 @@ import { PREMIUM_PLANS } from '../utils/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAppTheme from '../hooks/useAppTheme';
 import PremiumBadge from '../components/PremiumBadge';
+import { useToast } from '../contexts/ToastContext';
 
 const TABS = [
     { key: 'premium', icon: 'diamond', label: 'Premium' },
@@ -42,12 +43,13 @@ export default function AdminScreen() {
     const [actionLoading, setActionLoading] = useState({});
     const [grantTarget, setGrantTarget] = useState(null); // { userId, username }
     const { C } = useAppTheme();
+    const { showToast, showConfirm } = useToast();
     const [reportedPosts, setReportedPosts] = useState([]);
     const [activityLogs, setActivityLogs] = useState([]);
 
     useEffect(() => {
         if (!isAdmin) {
-            Alert.alert('Access Denied', 'You do not have admin access.');
+            showToast('You do not have admin access.', 'error', 'Access Denied');
             router.back();
             return;
         }
@@ -85,9 +87,9 @@ export default function AdminScreen() {
         try {
             await approvePremiumRequest(requestId, user.uid);
             setPremiumRequests(prev => prev.filter(r => r.id !== requestId));
-            Alert.alert('✅ Done', `${displayName} is now premium!`);
+            showToast(`${displayName} is now premium!`, 'success', '✅ Done');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setActionLoading(prev => ({ ...prev, [requestId]: null }));
         }
@@ -99,7 +101,7 @@ export default function AdminScreen() {
             await rejectPremiumRequest(requestId, user.uid);
             setPremiumRequests(prev => prev.filter(r => r.id !== requestId));
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setActionLoading(prev => ({ ...prev, [requestId]: null }));
         }
@@ -110,10 +112,10 @@ export default function AdminScreen() {
         try {
             setSending(true);
             await sendBroadcast(user.uid, broadcastMessage.trim());
-            Alert.alert('✅ Sent', 'Broadcast sent to all users!');
+            showToast('Broadcast sent to all users!', 'success', '✅ Sent');
             setBroadcastMessage('');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setSending(false);
         }
@@ -132,19 +134,15 @@ export default function AdminScreen() {
     // ─── User Quick Actions ───
 
     const quickBan = async (userId, username) => {
-        Alert.alert('Ban @' + username + '?', 'They won\'t be able to use the app.', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Ban',
-                style: 'destructive',
-                onPress: async () => {
-                    setActionLoading(prev => ({ ...prev, [userId]: 'banning' }));
-                    await banUser(userId);
-                    setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isBanned: true } : u));
-                    setActionLoading(prev => ({ ...prev, [userId]: null }));
-                },
+        showConfirm('Ban @' + username + '?', "They won't be able to use the app.",
+            async () => {
+                setActionLoading(prev => ({ ...prev, [userId]: 'banning' }));
+                await banUser(userId);
+                setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isBanned: true } : u));
+                setActionLoading(prev => ({ ...prev, [userId]: null }));
             },
-        ]);
+            { variant: 'destructive', confirmText: 'Ban', icon: 'ban-outline' }
+        );
     };
 
     const quickUnban = async (userId) => {
@@ -177,9 +175,9 @@ export default function AdminScreen() {
         try {
             await adminGrantPremium(userId, planId, 30);
             setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isPremium: true, premiumPlan: planId } : u));
-            Alert.alert('✅ Done', `Premium ${planId} granted!`);
+            showToast(`Premium ${planId} granted!`, 'success', '✅ Done');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
         setActionLoading(prev => ({ ...prev, [`p_${userId}`]: null }));
     };
@@ -190,7 +188,7 @@ export default function AdminScreen() {
             await adminRevokePremium(userId);
             setSearchResults(prev => prev.map(u => u.id === userId ? { ...u, isPremium: false, premiumPlan: null } : u));
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
         setActionLoading(prev => ({ ...prev, [`p_${userId}`]: null }));
     };

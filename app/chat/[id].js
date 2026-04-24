@@ -10,7 +10,6 @@ import {
     Image,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     Modal,
     Dimensions,
     ActivityIndicator,
@@ -56,6 +55,7 @@ import * as Clipboard from 'expo-clipboard';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import PremiumBadge from '../../components/PremiumBadge';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function ChatScreen() {
     const { id: chatId } = useLocalSearchParams();
@@ -64,6 +64,7 @@ export default function ChatScreen() {
     const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [chatInfo, setChatInfo] = useState(null);
@@ -146,22 +147,22 @@ export default function ChatScreen() {
     const handleDownloadMedia = async (url, type) => {
         try {
             if (type === 'document') {
-                Linking.openURL(url).catch(() => Alert.alert('Error', 'Cannot open file'));
+                Linking.openURL(url).catch(() => showToast('Cannot open file', 'error'));
                 return;
             }
             const { status } = await MediaLibrary.requestPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission Needed', 'Please allow media library access to save files.');
+                showToast('Please allow media library access to save files.', 'warning', 'Permission Needed');
                 return;
             }
             const ext = type === 'video' ? '.mp4' : '.jpg';
             const fileUri = FileSystem.documentDirectory + 'banana_download_' + Date.now() + ext;
-            Alert.alert('⬇️ Downloading...', 'Saving to your device gallery');
+            showToast('Saving to your device gallery...', 'info', '⬇️ Downloading');
             const { uri } = await FileSystem.downloadAsync(url, fileUri);
             await MediaLibrary.saveToLibraryAsync(uri);
-            Alert.alert('✅ Saved!', `${type === 'video' ? 'Video' : 'Photo'} saved to gallery.`);
+            showToast(`${type === 'video' ? 'Video' : 'Photo'} saved to gallery.`, 'success', '✅ Saved!');
         } catch (err) {
-            Alert.alert('Download Failed', err.message);
+            showToast('Download failed: ' + err.message, 'error');
         }
     };
 
@@ -183,7 +184,7 @@ export default function ChatScreen() {
             setReplyTo(null);
             setTyping(chatId, user.uid, false);
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setSending(false);
         }
@@ -210,7 +211,7 @@ export default function ChatScreen() {
             }
         } catch (err) {
             setSending(false);
-            Alert.alert('Error', 'Failed to send media: ' + err.message);
+            showToast('Failed to send media: ' + err.message, 'error');
         }
     };
 
@@ -236,7 +237,7 @@ export default function ChatScreen() {
             }
         } catch (err) {
             setSending(false);
-            Alert.alert('Error', 'Failed to send file: ' + err.message);
+            showToast('Failed to send file: ' + err.message, 'error');
         }
     };
 
@@ -245,7 +246,7 @@ export default function ChatScreen() {
         try {
             const { status } = await Audio.requestPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Please allow microphone access');
+                showToast('Please allow microphone access', 'warning', 'Permission needed');
                 return;
             }
             await Audio.setAudioModeAsync({
@@ -262,7 +263,7 @@ export default function ChatScreen() {
                 setRecordingDuration(d => d + 1);
             }, 1000);
         } catch (err) {
-            Alert.alert('Error', 'Failed to start recording: ' + err.message);
+            showToast('Failed to start recording: ' + err.message, 'error');
         }
     };
 
@@ -288,7 +289,7 @@ export default function ChatScreen() {
             setSending(false);
         } catch (err) {
             setSending(false);
-            Alert.alert('Error', 'Failed to send voice note: ' + err.message);
+            showToast('Failed to send voice note: ' + err.message, 'error');
         }
     };
 
@@ -314,7 +315,7 @@ export default function ChatScreen() {
                 media: gifUrl,
             });
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setSending(false);
         }
@@ -326,7 +327,7 @@ export default function ChatScreen() {
             const { sound } = await Audio.Sound.createAsync({ uri });
             await sound.playAsync();
         } catch (err) {
-            Alert.alert('Error', 'Could not play audio');
+            showToast('Could not play audio', 'error');
         }
     };
     const handleInputChange = (text) => {
@@ -361,28 +362,24 @@ export default function ChatScreen() {
 
     const handleDeleteSelected = () => {
         if (selectedMsgs.length === 0) return;
-        Alert.alert('Delete Messages', `Delete ${selectedMsgs.length} message(s)?`, [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete', style: 'destructive', onPress: async () => {
-                    await deleteMultipleMessages(chatId, selectedMsgs);
-                    setSelectedMsgs([]);
-                    setSelectMode(false);
-                }
+        showConfirm('Delete Messages', `Delete ${selectedMsgs.length} message(s)?`,
+            async () => {
+                await deleteMultipleMessages(chatId, selectedMsgs);
+                setSelectedMsgs([]);
+                setSelectMode(false);
             },
-        ]);
+            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+        );
     };
 
     const handleClearChat = () => {
-        Alert.alert('Clear Chat', 'Are you sure? All messages will be permanently deleted.', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Clear', style: 'destructive', onPress: async () => {
-                    await clearChat(chatId);
-                    setShowMenu(false);
-                }
+        showConfirm('Clear Chat', 'Are you sure? All messages will be permanently deleted.',
+            async () => {
+                await clearChat(chatId);
+                setShowMenu(false);
             },
-        ]);
+            { variant: 'destructive', confirmText: 'Clear', icon: 'trash-outline' }
+        );
     };
 
     const handleMsgLongPress = (msg) => {
@@ -534,7 +531,7 @@ export default function ChatScreen() {
                         {msg.type === MESSAGE_TYPES.FILE && msg.media && (
                             <TouchableOpacity
                                 style={styles.fileBubble}
-                                onPress={() => Linking.openURL(msg.media).catch(() => Alert.alert('Error', 'Cannot open file'))}
+                                onPress={() => Linking.openURL(msg.media).catch(() => showToast('Cannot open file', 'error'))}
                             >
                                 <Ionicons name="document-outline" size={28} color={isMe ? Colors.messageSentText : Colors.primary} />
                                 <View style={{ flex: 1, marginLeft: 8 }}>
@@ -1003,7 +1000,7 @@ export default function ChatScreen() {
                                         setGroupNameInput('');
                                         loadChatInfo();
                                     } catch (e) {
-                                        Alert.alert('Error', 'Could not update group name');
+                                        showToast('Could not update group name', 'error');
                                     }
                                 }}
                             >

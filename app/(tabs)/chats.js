@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     Image,
     TextInput,
-    Alert,
     ActivityIndicator,
     Animated,
 } from 'react-native';
@@ -21,6 +20,7 @@ import { formatTime, getInitials, truncateText, debounce } from '../../utils/hel
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAppTheme from '../../hooks/useAppTheme';
 import PremiumBadge from '../../components/PremiumBadge';
+import { useToast } from '../../contexts/ToastContext';
 
 const SECTIONS = [
     { key: 'primary', label: 'Primary' },
@@ -34,6 +34,7 @@ export default function ChatsScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { C, skin } = useAppTheme();
+    const { showToast, showConfirm } = useToast();
     const [chats, setChats] = useState([]);
     const [searchText, setSearchText] = useState('');
     const [chatUsers, setChatUsers] = useState({});
@@ -102,7 +103,7 @@ export default function ChatsScreen() {
             router.push(`/chat/${chat.id}`);
         } catch (err) {
             console.error('Start DM error:', err);
-            Alert.alert('Error', 'Failed to start conversation');
+            showToast('Failed to start conversation', 'error');
         }
     };
 
@@ -190,47 +191,29 @@ export default function ChatsScreen() {
         const isPinned = userProfile?.pinnedChats?.includes(chat.id);
         const isArchived = userProfile?.archivedChats?.includes(chat.id);
 
-        Alert.alert(
-            name,
-            'What would you like to do?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: isPinned ? '📌 Unpin Chat' : '📌 Pin Chat',
-                    onPress: async () => {
-                        try {
+        // Use showConfirm for pin/unpin as the primary action
+        showConfirm(name, 'What would you like to do?',
+            async () => {
+                try {
+                    if (isPinned) await unpinChat(user.uid, chat.id);
+                    else await pinChat(user.uid, chat.id);
+                } catch(e) { showToast(e.message, 'error'); }
+            },
+            {
+                confirmText: isPinned ? '📌 Unpin' : '📌 Pin',
+                cancelText: isArchived ? '📂 Unarchive' : '📂 Archive',
+                icon: 'chatbubble-outline',
+                onCancel: async () => {
+                    try {
+                        if (isArchived) {
+                            await unarchiveChat(user.uid, chat.id);
+                        } else {
                             if (isPinned) await unpinChat(user.uid, chat.id);
-                            else await pinChat(user.uid, chat.id);
-                        } catch(e) { Alert.alert('Error', e.message); }
-                    }
-                },
-                {
-                    text: isArchived ? '📂 Unarchive Chat' : '📂 Archive Chat',
-                    onPress: async () => {
-                        try {
-                            if (isArchived) {
-                                await unarchiveChat(user.uid, chat.id);
-                            } else {
-                                if (isPinned) await unpinChat(user.uid, chat.id);
-                                await archiveChat(user.uid, chat.id);
-                            }
-                        } catch(e) { Alert.alert('Error', e.message); }
-                    }
-                },
-                { text: '🗑️ Clear History', style: 'destructive', onPress: () => {
-                    Alert.alert('Clear History', `Delete all messages in "${name}"?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Clear', style: 'destructive', onPress: async () => {
-                            try {
-                                await clearChat(chat.id);
-                                if (isPinned) await unpinChat(user.uid, chat.id);
-                                if (isArchived) await unarchiveChat(user.uid, chat.id);
-                                setChats(prev => prev.filter(c => c.id !== chat.id));
-                            } catch(e) { Alert.alert('Error', e.message); }
-                        }},
-                    ]);
-                }},
-            ]
+                            await archiveChat(user.uid, chat.id);
+                        }
+                    } catch(e) { showToast(e.message, 'error'); }
+                }
+            }
         );
     };
 
@@ -315,14 +298,16 @@ export default function ChatsScreen() {
                 <Text style={[styles.headerTitle, { color: C.text }]}>Chats</Text>
                 <TouchableOpacity
                     style={styles.newChatBtn}
-                    onPress={() => Alert.alert(
+                    onPress={() => showConfirm(
                         'New Conversation',
                         'What would you like to create?',
-                        [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: '💬 New DM', onPress: () => router.push('/(tabs)/search') },
-                            { text: '👥 New Group', onPress: () => router.push('/create-group') },
-                        ]
+                        () => router.push('/(tabs)/search'),
+                        {
+                            confirmText: '💬 New DM',
+                            cancelText: '👥 New Group',
+                            icon: 'create-outline',
+                            onCancel: () => router.push('/create-group'),
+                        }
                     )}
                 >
                     <Ionicons name="create-outline" size={22} color={Colors.primary} />

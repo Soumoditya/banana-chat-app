@@ -5,17 +5,18 @@ import {
     StyleSheet,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function GuestScreen() {
     const [loading, setLoading] = useState(false);
     const { signInAsGuest } = useAuth();
     const router = useRouter();
+    const { showToast } = useToast();
 
     const handleGuestLogin = async () => {
         try {
@@ -23,7 +24,7 @@ export default function GuestScreen() {
             await signInAsGuest();
             router.replace('/(tabs)/home');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setLoading(false);
         }

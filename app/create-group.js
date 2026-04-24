@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList,
-    Image, Alert, ActivityIndicator,
+    Image, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,11 +11,13 @@ import { searchUsers } from '../services/users';
 import { createGroupChat } from '../services/chat';
 import { getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useToast } from '../contexts/ToastContext';
 
 export default function CreateGroupScreen() {
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
     const [groupName, setGroupName] = useState('');
     const [searchText, setSearchText] = useState('');
     const [results, setResults] = useState([]);
@@ -55,11 +57,11 @@ export default function CreateGroupScreen() {
 
     const handleCreate = async () => {
         if (!groupName.trim()) {
-            Alert.alert('Error', 'Please enter a group name');
+            showToast('Please enter a group name', 'error');
             return;
         }
         if (selectedUsers.length < 1) {
-            Alert.alert('Error', 'Please select at least 1 member');
+            showToast('Please select at least 1 member', 'error');
             return;
         }
 
@@ -69,7 +71,7 @@ export default function CreateGroupScreen() {
             const result = await createGroupChat(groupName.trim(), user.uid, memberUids, false);
             router.replace(`/chat/${result.id}`);
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setCreating(false);
         }

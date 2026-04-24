@@ -8,7 +8,6 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
-    Alert,
     ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -16,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { validateEmail, validateUsername } from '../../utils/helpers';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function SignupScreen() {
     const [username, setUsername] = useState('');
@@ -28,6 +28,7 @@ export default function SignupScreen() {
     const [usernameStatus, setUsernameStatus] = useState(null); // null | 'available' | 'taken' | 'checking' | 'error'
     const { signUp, checkUsernameAvailable, error, setError } = useAuth();
     const router = useRouter();
+    const { showToast } = useToast();
 
     const checkUsername = async (name) => {
         setUsername(name);
@@ -47,32 +48,32 @@ export default function SignupScreen() {
 
     const handleSignup = async () => {
         if (!username.trim() || !email.trim() || !password || !displayName.trim()) {
-            Alert.alert('Error', 'Please fill in all fields');
+            showToast('Please fill in all fields', 'error');
             return;
         }
 
         if (!validateUsername(username)) {
-            Alert.alert('Error', 'Username must be 3-20 characters, letters, numbers, and underscores only');
+            showToast('Username must be 3-20 characters, letters, numbers, and underscores only', 'error');
             return;
         }
 
         if (!validateEmail(email)) {
-            Alert.alert('Error', 'Please enter a valid email');
+            showToast('Please enter a valid email', 'error');
             return;
         }
 
         if (password.length < 6) {
-            Alert.alert('Error', 'Password must be at least 6 characters');
+            showToast('Password must be at least 6 characters', 'error');
             return;
         }
 
         if (password !== confirmPassword) {
-            Alert.alert('Error', 'Passwords do not match');
+            showToast('Passwords do not match', 'error');
             return;
         }
 
         if (usernameStatus === 'taken') {
-            Alert.alert('Error', 'Username is already taken');
+            showToast('Username is already taken', 'error');
             return;
         }
 
@@ -82,7 +83,7 @@ export default function SignupScreen() {
             await signUp(email.trim(), password, username.trim(), displayName.trim());
             router.replace('/(tabs)/home');
         } catch (err) {
-            Alert.alert('Signup Failed', err.message);
+            showToast(err.message, 'error', 'Signup Failed');
         } finally {
             setLoading(false);
         }
