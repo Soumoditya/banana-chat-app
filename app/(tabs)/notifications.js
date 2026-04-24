@@ -8,7 +8,6 @@ import {
     Image,
     RefreshControl,
     Animated,
-    Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,6 +22,7 @@ import { markAllNotificationsRead } from '../../services/notifications';
 import { showLocalNotification, setupNotificationResponseListener } from '../../services/pushNotifications';
 import useAppTheme from '../../hooks/useAppTheme';
 import PremiumBadge from '../../components/PremiumBadge';
+import { useToast } from '../../contexts/ToastContext';
 
 // ─── Time grouping helpers ───
 const isToday = (date) => {
@@ -135,12 +135,7 @@ function NotificationItem({ item, onPress, onDelete, onFollowBack, currentUserId
             <TouchableOpacity
                 style={[styles.notifItem, !item.read && styles.notifUnread]}
                 onPress={() => onPress(item)}
-                onLongPress={() => {
-                    Alert.alert('Delete Notification', 'Remove this notification?', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => onDelete(item.id) },
-                    ]);
-                }}
+                onLongPress={() => onDelete(item.id)}
             >
                 <View style={[styles.notifIconCircle, { backgroundColor: getNotifColor(item.type) + '20' }]}>
                     <Ionicons name={getNotifIcon(item.type)} size={18} color={getNotifColor(item.type)} />
@@ -193,6 +188,7 @@ export default function NotificationsScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { C } = useAppTheme();
+    const { showToast, showConfirm } = useToast();
     const [notifications, setNotifications] = useState([]);
     const [sections, setSections] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -318,7 +314,7 @@ export default function NotificationsScreen() {
                 return updated;
             });
         } catch (err) {
-            Alert.alert('Error', 'Could not delete notification');
+            showToast('Could not delete notification', 'error');
         }
     };
 
@@ -326,25 +322,23 @@ export default function NotificationsScreen() {
         try {
             await followUser(user.uid, actorId);
             if (refreshProfile) await refreshProfile();
-            Alert.alert('Followed!', 'You are now following this user');
+            showToast('You are now following this user', 'success', 'Followed!');
         } catch (err) {
-            Alert.alert('Error', 'Could not follow user');
+            showToast('Could not follow user', 'error');
         }
     };
 
     const handleClearAll = () => {
-        Alert.alert('Clear All', 'Delete all notifications?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Clear All', style: 'destructive', onPress: async () => {
-                    for (const n of notifications) {
-                        try { await deleteDoc(doc(db, 'notifications', n.id)); } catch { }
-                    }
-                    setNotifications([]);
-                    setSections([]);
+        showConfirm('Clear All', 'Delete all notifications?',
+            async () => {
+                for (const n of notifications) {
+                    try { await deleteDoc(doc(db, 'notifications', n.id)); } catch { }
                 }
+                setNotifications([]);
+                setSections([]);
             },
-        ]);
+            { variant: 'destructive', confirmText: 'Clear All', icon: 'trash-outline' }
+        );
     };
 
     const onRefresh = async () => {

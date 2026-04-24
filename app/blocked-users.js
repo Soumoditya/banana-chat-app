@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -9,11 +9,13 @@ import { getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useToast } from '../contexts/ToastContext';
 
 export default function BlockedUsersScreen() {
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [blockedUsers, setBlockedUsers] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -38,20 +40,18 @@ export default function BlockedUsersScreen() {
     };
 
     const handleUnblock = async (uid) => {
-        Alert.alert('Unblock User', 'Are you sure you want to unblock this user?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Unblock', style: 'destructive', onPress: async () => {
-                    try {
-                        const updated = (userProfile?.blockedUsers || []).filter(id => id !== uid);
-                        await updateUserProfile(user.uid, { blockedUsers: updated });
-                        setBlockedUsers(blockedUsers.filter(u => u.id !== uid));
-                    } catch (err) {
-                        Alert.alert('Error', 'Failed to unblock user');
-                    }
+        showConfirm('Unblock User', 'Are you sure you want to unblock this user?',
+            async () => {
+                try {
+                    const updated = (userProfile?.blockedUsers || []).filter(id => id !== uid);
+                    await updateUserProfile(user.uid, { blockedUsers: updated });
+                    setBlockedUsers(blockedUsers.filter(u => u.id !== uid));
+                } catch (err) {
+                    showToast('Failed to unblock user', 'error');
                 }
             },
-        ]);
+            { confirmText: 'Unblock', icon: 'shield-outline' }
+        );
     };
 
     return (

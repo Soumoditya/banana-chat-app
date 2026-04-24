@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAppTheme from '../hooks/useAppTheme';
 import { updateUserProfile } from '../services/users';
+import { useToast } from '../contexts/ToastContext';
 
 const CATEGORIES = [
     { id: 'personal', name: 'Personal', icon: 'person-outline', desc: 'Standard personal profile', color: '#3B82F6' },
@@ -29,6 +30,7 @@ export default function AccountTypeScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { C, skin } = useAppTheme();
+    const { showToast } = useToast();
 
     const [category, setCategory] = useState(userProfile?.profileCategory || 'personal');
     const [occupation, setOccupation] = useState(userProfile?.occupation || '');
@@ -47,10 +49,10 @@ export default function AccountTypeScreen() {
                 showCategory,
             });
             await refreshProfile();
-            Alert.alert('✅ Updated', 'Account type saved successfully!');
+            showToast('Account type saved successfully!', 'success', '✅ Updated');
             router.back();
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         } finally {
             setSaving(false);
         }

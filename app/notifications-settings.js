@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -7,11 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { updateUserProfile } from '../services/users';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useToast } from '../contexts/ToastContext';
 
 export default function NotificationsSettingsScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { user, userProfile, refreshProfile } = useAuth();
+    const { showToast } = useToast();
 
     const [settings, setSettings] = useState({
         messages: userProfile?.settings?.notifications !== false,
@@ -52,7 +54,7 @@ export default function NotificationsSettingsScreen() {
         } catch (err) {
             // Revert on error
             setSettings(settings);
-            Alert.alert('Error', 'Failed to update notification setting');
+            showToast('Failed to update notification setting', 'error');
         }
     };
 

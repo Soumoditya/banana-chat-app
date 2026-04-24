@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -7,11 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getArchivedPosts, unarchivePost, permanentlyDeletePost } from '../services/posts';
 import { Video, ResizeMode } from 'expo-av';
+import { useToast } from '../contexts/ToastContext';
 
 export default function ArchivedPostsScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -30,27 +32,27 @@ export default function ArchivedPostsScreen() {
     };
 
     const handleUnarchive = (postId) => {
-        Alert.alert('Unarchive', 'Move this post back to your profile?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Unarchive', onPress: async () => {
+        showConfirm('Unarchive', 'Move this post back to your profile?',
+            async () => {
                 try {
                     await unarchivePost(postId);
                     setPosts(prev => prev.filter(p => p.id !== postId));
-                } catch (err) { Alert.alert('Error', err.message); }
-            }},
-        ]);
+                } catch (err) { showToast(err.message, 'error'); }
+            },
+            { confirmText: 'Unarchive', icon: 'arrow-undo-outline' }
+        );
     };
 
     const handleDelete = (postId) => {
-        Alert.alert('Delete Permanently', 'This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: async () => {
+        showConfirm('Delete Permanently', 'This cannot be undone.',
+            async () => {
                 try {
                     await permanentlyDeletePost(postId);
                     setPosts(prev => prev.filter(p => p.id !== postId));
-                } catch (err) { Alert.alert('Error', err.message); }
-            }},
-        ]);
+                } catch (err) { showToast(err.message, 'error'); }
+            },
+            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+        );
     };
 
     const renderItem = ({ item }) => {

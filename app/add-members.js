@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
-    Image, TextInput, Alert, ActivityIndicator,
+    Image, TextInput, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,12 +12,14 @@ import { searchUsers, getUserProfile } from '../services/users';
 import { getInitials } from '../utils/helpers';
 import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { useToast } from '../contexts/ToastContext';
 
 export default function AddMembersScreen() {
     const { chatId } = useLocalSearchParams();
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
 
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
@@ -59,19 +61,16 @@ export default function AddMembersScreen() {
 
     const handleAdd = async () => {
         if (selected.length === 0) return;
-        if (!chatId) { Alert.alert('Error', 'Invalid chat'); return; }
+        if (!chatId) { showToast('Invalid chat', 'error'); return; }
         setAdding(true);
         try {
             await updateDoc(doc(db, 'chats', chatId), {
                 participants: arrayUnion(...selected),
             });
-            Alert.alert(
-                'Done',
-                `Added ${selected.length} member${selected.length > 1 ? 's' : ''} to the group.`,
-                [{ text: 'OK', onPress: () => router.back() }]
-            );
+            showToast(`Added ${selected.length} member${selected.length > 1 ? 's' : ''} to the group`, 'success', 'Done');
+            router.back();
         } catch (err) {
-            Alert.alert('Error', err.message || 'Could not add members');
+            showToast(err.message || 'Could not add members', 'error');
         } finally {
             setAdding(false);
         }
