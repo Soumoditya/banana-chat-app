@@ -192,15 +192,14 @@ npx expo run:android
 
 ## Latest Activity
 
-- **fix:** Version synced to v4.8.0 across app.json, package.json, website, and README
-- **fix:** APK now downloads directly from Vercel instead of redirecting to GitHub
-- **fix:** Website premium section updated to show all 6 tiers (Standard → VIP)
-- **fix:** Developer bio rewritten — cleaner, authentic, no self-preaching
+- **feat:** GIF support in post comments via GiphyPicker
+- **fix:** Comment deletion now works properly (long-press → Delete)
+- **fix:** Other users' profiles now support pull-to-refresh
+- **fix:** PDF/document viewing uses Google Docs viewer instead of raw Cloudinary redirect
+- **fix:** Premium badge assets replaced with transparent starburst PNGs (no white square background)
+- **fix:** Version synced to v4.8.0 across all platforms
 - **feat:** 7 micro-animations (double-tap like, upvote bounce, FadeInView, skeleton shimmer, scale-press, recording wave)
-- **fix:** Theme consistency audit — all hardcoded Colors.* replaced with dynamic C.* across 5 screens
-- **fix:** Chat copy action now shows toast feedback
-- **fix:** Comment text now partially selectable
-- **refactor:** ToastContext.showConfirm supports onCancel callback for multi-action menus
+- **fix:** Theme consistency audit — all hardcoded Colors.* replaced with dynamic C.* across all screens
 
 ## Links
 

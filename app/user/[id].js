@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, FlatList, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, FlatList, Linking, RefreshControl } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -46,6 +46,7 @@ export default function UserProfileScreen() {
     const [viewerImage, setViewerImage] = useState(null);
     const [activeTab, setActiveTab] = useState('posts');
     const [highlights, setHighlights] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         loadProfile();
@@ -275,7 +276,16 @@ export default function UserProfileScreen() {
 
     return (
         <>
-        <ScrollView style={[styles.container, { backgroundColor: C.background }]}>
+        <ScrollView style={[styles.container, { backgroundColor: C.background }]}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={async () => { setRefreshing(true); await loadProfile(); setRefreshing(false); }}
+                    tintColor={C.primary || Colors.primary}
+                    colors={[C.primary || Colors.primary]}
+                />
+            }
+        >
             {/* Header */}
             <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, backgroundColor: C.surface, borderBottomColor: C.border }]}>
                 <TouchableOpacity onPress={() => router.back()}>

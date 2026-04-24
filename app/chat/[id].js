@@ -147,7 +147,9 @@ export default function ChatScreen() {
     const handleDownloadMedia = async (url, type) => {
         try {
             if (type === 'document') {
-                Linking.openURL(url).catch(() => showToast('Cannot open file', 'error'));
+                // Use Google Docs Viewer for PDF/documents instead of raw URL
+                const viewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`;
+                Linking.openURL(viewerUrl).catch(() => showToast('Cannot open file', 'error'));
                 return;
             }
             const { status } = await MediaLibrary.requestPermissionsAsync();

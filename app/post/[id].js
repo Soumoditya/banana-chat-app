@@ -46,6 +46,7 @@ import VideoViewer from '../../components/VideoViewer';
 import AudioWavePlayer from '../../components/AudioWavePlayer';
 import PremiumBadge from '../../components/PremiumBadge';
 import { useToast } from '../../contexts/ToastContext';
+import GiphyPicker from '../../components/GiphyPicker';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -83,6 +84,7 @@ export default function PostDetailScreen() {
     const commentRecTimerRef = useRef(null);
     // Attachment menu
     const [showAttachMenu, setShowAttachMenu] = useState(false);
+    const [showGiphyPicker, setShowGiphyPicker] = useState(false);
     // @ mention autosuggest
     const [mentionQuery, setMentionQuery] = useState('');
     const [mentionResults, setMentionResults] = useState([]);
@@ -276,7 +278,10 @@ export default function PostDetailScreen() {
 
             if (commentMedia) {
                 mediaType = commentMedia.mediaType || (commentMedia.type === 'video' ? 'video' : 'image');
-                if (mediaType === 'file') {
+                if (mediaType === 'gif') {
+                    // GIF URLs from Giphy are already hosted — no upload needed
+                    mediaUrl = commentMedia.uri;
+                } else if (mediaType === 'file') {
                     // Upload files as raw to Cloudinary
                     const uploaded = await uploadToCloudinary(commentMedia.uri, 'raw');
                     mediaUrl = uploaded.url;
@@ -1016,6 +1021,10 @@ export default function PostDetailScreen() {
                             <Ionicons name="images" size={22} color={Colors.primary} />
                             <Text style={styles.attachMenuText}>Media</Text>
                         </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachMenuItem} onPress={() => { setShowAttachMenu(false); setShowGiphyPicker(true); }}>
+                            <Text style={{ fontSize: 20 }}>GIF</Text>
+                            <Text style={styles.attachMenuText}>GIF</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity style={styles.attachMenuItem} onPress={pickCommentFile}>
                             <Ionicons name="document" size={22} color={Colors.warning || '#FF9500'} />
                             <Text style={styles.attachMenuText}>File</Text>
@@ -1098,6 +1107,15 @@ export default function PostDetailScreen() {
             <ImageViewer visible={!!viewerImage} imageUrl={viewerImage} onClose={() => setViewerImage(null)} />
             {/* Video viewer modal */}
             <VideoViewer visible={!!viewerVideo} videoUrl={viewerVideo} onClose={() => setViewerVideo(null)} />
+            {/* GIF Picker */}
+            <GiphyPicker
+                visible={showGiphyPicker}
+                onClose={() => setShowGiphyPicker(false)}
+                onSelect={(gifUrl) => {
+                    setShowGiphyPicker(false);
+                    setCommentMedia({ uri: gifUrl, mediaType: 'gif' });
+                }}
+            />
         </KeyboardAvoidingView>
     );
 }
