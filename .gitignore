@@ -49,3 +49,13 @@ Desktop.ini
 
 # Project Guardian backups
 project_backup_*.zip
+
+# Local Node.js versions (for build tooling)
+.node18/
+.node20/
+
+# Built APKs
+*.apk
+
+# JVM crash logs
+hs_err_pid*.log

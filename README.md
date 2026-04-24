@@ -192,15 +192,15 @@ npx expo run:android
 
 ## Latest Activity
 
+- **build:** New production APK v4.8.0 (40.6 MB, arm64-v8a, signed release)
+- **feat:** Premium developer section on landing page with animated avatar ring, social links, and stats
+- **feat:** APK download CTA on website hero, footer, and OSS section
+- **fix:** Duplicate `emojiToCodePoint` identifier in AppleEmojiPicker (import vs local)
+- **fix:** All GitHub links updated from `/Banana` to `/banana-chat-app`
+- **docs:** Added root MIT LICENSE file — README link was 404ing
 - **feat:** Custom animated toast notification system replacing all native Alert popups
 - **security:** Moved all API keys to environment variables for safe open-sourcing
-- **feat:** Shared animation presets (fadeIn, bounce, scalePress, stagger)
-- **fix:** All in-app URLs now point to `banana-chat-app.vercel.app`
-- **feat:** About page with Website, GitHub, Terms & Privacy links
 - **refactor:** GitHub repo renamed to `banana-chat-app`, now public
-- **feat:** Production polish pass — 16-item bug fix and UX optimization
-- **fix:** Global theme propagation — all screens now use dynamic `C.xxx` colors
-- **fix:** Stories/highlights persistence with resilient cross-collection fetching
 
 ## Links
 

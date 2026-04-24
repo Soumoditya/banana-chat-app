@@ -69,17 +69,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COLS = 8;
 const EMOJI_SIZE = (SCREEN_WIDTH - 32) / COLS;
 
-const emojiToCodePoint = (emoji) => {
-    const codePoints = [];
-    for (const char of emoji) {
-        const cp = char.codePointAt(0);
-        if (cp !== undefined && cp !== 0xfe0f) {
-            codePoints.push(cp.toString(16));
-        }
-    }
-    return codePoints.join('-');
-};
-
 const EmojiItem = React.memo(({ emoji, onPress }) => (
     <TouchableOpacity
         style={styles.emojiCell}
