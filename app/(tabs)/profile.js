@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal,
+    View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Modal,
     TextInput, Dimensions, Linking, Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -21,6 +21,7 @@ import { uploadToCloudinary } from '../../config/cloudinary';
 import * as ImagePicker from 'expo-image-picker';
 import PremiumBadge, { PremiumFlair } from '../../components/PremiumBadge';
 import { isPremiumActive } from '../../utils/premium';
+import { useToast } from '../../contexts/ToastContext';
 
 const { width } = Dimensions.get('window');
 
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
     const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [posts, setPosts] = useState([]);
     const [savedPosts, setSavedPosts] = useState([]);
     const [resharedPosts, setResharedPosts] = useState([]);
@@ -84,13 +86,10 @@ export default function ProfileScreen() {
     };
 
     const handleSignOut = () => {
-        Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Sign Out', style: 'destructive',
-                onPress: async () => { await signOut(); router.replace('/(auth)/login'); }
-            },
-        ]);
+        showConfirm('Sign Out', 'Are you sure you want to sign out?',
+            async () => { await signOut(); router.replace('/(auth)/login'); },
+            { variant: 'destructive', confirmText: 'Sign Out', icon: 'log-out-outline' }
+        );
     };
 
     const openEditProfile = () => {
@@ -129,11 +128,11 @@ export default function ProfileScreen() {
                 await updateUserProfile(user.uid, { avatar: uploaded.url });
                 await refreshProfile();
                 setUploading(false);
-                Alert.alert('Success', 'Profile photo updated!');
+                showToast('Profile photo updated!', 'success');
             }
         } catch (err) {
             setUploading(false);
-            Alert.alert('Error', 'Failed to update photo');
+            showToast('Failed to update photo', 'error');
         }
     };
 
@@ -150,9 +149,9 @@ export default function ProfileScreen() {
             });
             await refreshProfile();
             setShowEditModal(false);
-            Alert.alert('Success', 'Profile updated!');
+            showToast('Profile updated!', 'success');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
     };
 
@@ -167,9 +166,9 @@ export default function ProfileScreen() {
             });
             await refreshProfile();
             setShowPersonalModal(false);
-            Alert.alert('Success', 'Personal details updated!');
+            showToast('Personal details updated!', 'success');
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
     };
 
@@ -307,7 +306,7 @@ export default function ProfileScreen() {
                                                 else if (platform === 'github') url = `https://github.com/${value}`;
                                                 else if (platform === 'linkedin') url = `https://linkedin.com/in/${value}`;
                                                 else if (!url.startsWith('http')) url = 'https://' + url;
-                                                Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
+                                                Linking.openURL(url).catch(() => showToast('Could not open link', 'error'));
                                             }}
                                         >
                                             <Ionicons name={config.icon} size={20} color={config.color} />
@@ -318,7 +317,7 @@ export default function ProfileScreen() {
                                     <TouchableOpacity style={styles.socialIconBtn} onPress={() => {
                                         let url = userProfile.link1;
                                         if (!url.startsWith('http')) url = 'https://' + url;
-                                        Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
+                                        Linking.openURL(url).catch(() => showToast('Could not open link', 'error'));
                                     }}>
                                         <Ionicons name="link-outline" size={18} color={Colors.primary} />
                                     </TouchableOpacity>
@@ -387,11 +386,11 @@ export default function ProfileScreen() {
                                 router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`);
                             }}
                             onLongPress={() => {
-                                Alert.alert(h.name || 'Highlight', null, [
-                                    { text: 'View', onPress: () => router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`) },
-                                    { text: 'Edit', onPress: () => router.push(`/highlight-editor?editId=${h.id}`) },
-                                    { text: 'Cancel', style: 'cancel' },
-                                ]);
+                                showConfirm(h.name || 'Highlight', 'View or edit this highlight?',
+                                    () => router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`),
+                                    { confirmText: 'View', cancelText: 'Edit', icon: 'star-outline',
+                                      onCancel: () => router.push(`/highlight-editor?editId=${h.id}`) }
+                                );
                             }}
                         >
                             <View style={[

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Share, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Share, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -12,6 +12,7 @@ import { formatTime, formatCount, getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ImageViewer from '../components/ImageViewer';
 import useAppTheme from '../hooks/useAppTheme';
+import { useToast } from '../contexts/ToastContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -40,6 +41,7 @@ export default function PostFeedScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { C, skin } = useAppTheme();
+    const { showConfirm } = useToast();
     const flatListRef = useRef(null);
     const [posts, setPosts] = useState([]);
     const [authors, setAuthors] = useState({});
@@ -160,23 +162,27 @@ export default function PostFeedScreen() {
         } catch (err) { console.error('Reshare error:', err); }
     };
     const handleShare = async (postId) => {
-        Alert.alert('Share Post', 'What would you like to do?', [
-            { text: 'Send to Chat', onPress: () => router.push(`/share-post/${postId}`) },
-            { text: 'Share via...', onPress: async () => {
-                try {
-                    const postData = await getPost(postId);
-                    let msg = postData?.content ? `${postData.content}\n\n` : '';
-                    msg += 'Shared from Banana Chat 🍌';
-                    const opts = { message: msg };
-                    if (postData?.media?.[0]) {
-                        const uri = typeof postData.media[0] === 'string' ? postData.media[0] : postData.media[0]?.uri;
-                        if (uri) opts.url = uri;
-                    }
-                    await Share.share(opts);
-                } catch {}
-            }},
-            { text: 'Cancel', style: 'cancel' },
-        ]);
+        showConfirm('Share Post', 'What would you like to do?',
+            () => router.push(`/share-post/${postId}`),
+            {
+                confirmText: 'Send to Chat',
+                cancelText: 'Share via...',
+                icon: 'share-outline',
+                onCancel: async () => {
+                    try {
+                        const postData = await getPost(postId);
+                        let msg = postData?.content ? `${postData.content}\n\n` : '';
+                        msg += 'Shared from Banana Chat 🍌';
+                        const opts = { message: msg };
+                        if (postData?.media?.[0]) {
+                            const uri = typeof postData.media[0] === 'string' ? postData.media[0] : postData.media[0]?.uri;
+                            if (uri) opts.url = uri;
+                        }
+                        await Share.share(opts);
+                    } catch {}
+                },
+            }
+        );
     };
 
     const renderPost = ({ item: post }) => {

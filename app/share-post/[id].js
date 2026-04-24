@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
@@ -11,12 +11,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getInitials } from '../../utils/helpers';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { useToast } from '../../contexts/ToastContext';
 
 export default function SharePostScreen() {
     const { id: postId } = useLocalSearchParams();
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast } = useToast();
     const [following, setFollowing] = useState([]);
     const [sending, setSending] = useState(null);
     const [post, setPost] = useState(null);
@@ -78,11 +80,11 @@ export default function SharePostScreen() {
                     authorName: post?._authorName || post?.authorName || 'User',
                 },
             });
-            Alert.alert('Sent!', `Post shared with ${targetUser.displayName || targetUser.username}`);
+            showToast(`Post shared with ${targetUser.displayName || targetUser.username}`, 'success', 'Sent!');
             router.back();
         } catch (err) {
             console.error('Send error:', err);
-            Alert.alert('Error', 'Could not send post: ' + (err.message || 'Unknown'));
+            showToast('Could not send post: ' + (err.message || 'Unknown'), 'error');
         } finally {
             setSending(null);
         }

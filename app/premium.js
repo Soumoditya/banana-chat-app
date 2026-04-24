@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking,
     Dimensions, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { PREMIUM_PLANS, getPlanConfig, isPremiumActive, getPremiumFlair, PLAN_TI
 import { submitPremiumRequest, cancelPremium, upgradeToPremium } from '../services/users';
 import PremiumBadge from '../components/PremiumBadge';
 import { isUserAdmin } from '../utils/constants';
+import { useToast } from '../contexts/ToastContext';
 
 const { width } = Dimensions.get('window');
 
@@ -38,6 +39,7 @@ export default function PremiumScreen() {
     const [processing, setProcessing] = useState(false);
     const [paymentStep, setPaymentStep] = useState('select');
     const [paymentMethod, setPaymentMethod] = useState(null);
+    const { showToast, showConfirm } = useToast();
 
     const currentPlan = getPlanConfig(userProfile);
     const isCurrentlyPremium = isPremiumActive(userProfile);
@@ -51,10 +53,10 @@ export default function PremiumScreen() {
             await upgradeToPremium(user.uid, selectedPlan, 'admin');
             await refreshProfile();
             setProcessing(false);
-            Alert.alert('✅ Premium Activated', `${PREMIUM_PLANS[selectedPlan]?.name} plan activated! (Admin override — no payment required)`);
+            showToast(`${PREMIUM_PLANS[selectedPlan]?.name} plan activated! (Admin override)`, 'success', '✅ Premium Activated');
         } catch (err) {
             setProcessing(false);
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
     };
 
@@ -71,10 +73,10 @@ export default function PremiumScreen() {
                 setPaymentMethod('upi');
                 await Linking.openURL(upiUrl);
             } else {
-                Alert.alert('No UPI App', 'Install Google Pay, PhonePe, or Paytm.');
+                showToast('Install Google Pay, PhonePe, or Paytm', 'warning', 'No UPI App');
             }
         } catch {
-            Alert.alert('Error', 'Could not open UPI app');
+            showToast('Could not open UPI app', 'error');
         }
     };
 
@@ -87,7 +89,7 @@ export default function PremiumScreen() {
             setPaymentMethod('paypal');
             await Linking.openURL(paypalUrl);
         } catch {
-            Alert.alert('Error', 'Could not open PayPal');
+            showToast('Could not open PayPal', 'error');
         }
     };
 
@@ -96,48 +98,37 @@ export default function PremiumScreen() {
         const plan = PREMIUM_PLANS[selectedPlan];
         if (!plan || !user?.uid) return;
 
-        Alert.alert(
+        showConfirm(
             'Confirm Payment',
             `Did you complete the ₹${plan.price} payment for ${plan.name}?`,
-            [
-                { text: 'Not Yet', style: 'cancel', onPress: () => setPaymentStep('select') },
-                {
-                    text: 'Yes, Submit',
-                    onPress: async () => {
-                        try {
-                            setProcessing(true);
-                            await submitPremiumRequest(user.uid, selectedPlan, paymentMethod || 'upi');
-                            setProcessing(false);
-                            setPaymentStep('submitted');
-                        } catch (err) {
-                            setProcessing(false);
-                            Alert.alert('Error', err.message);
-                        }
-                    },
-                },
-            ]
+            async () => {
+                try {
+                    setProcessing(true);
+                    await submitPremiumRequest(user.uid, selectedPlan, paymentMethod || 'upi');
+                    setProcessing(false);
+                    setPaymentStep('submitted');
+                } catch (err) {
+                    setProcessing(false);
+                    showToast(err.message, 'error');
+                }
+            },
+            { confirmText: 'Yes, Submit', cancelText: 'Not Yet', icon: 'card-outline' }
         );
     };
 
     // ─── Cancel Premium ───
     const handleCancelPremium = () => {
-        Alert.alert(
+        showConfirm(
             'Cancel Premium',
             'Are you sure? You\'ll lose all premium features.',
-            [
-                { text: 'Keep', style: 'cancel' },
-                {
-                    text: 'Cancel',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await cancelPremium(user.uid);
-                            await refreshProfile();
-                            Alert.alert('Done', 'Premium cancelled.');
-                        } catch (err) { Alert.alert('Error', err.message); }
-                    },
-                },
-            ]
+            async () => {
+                try {
+                    await cancelPremium(user.uid);
+                    await refreshProfile();
+                    showToast('Premium cancelled', 'info', 'Done');
+                } catch (err) { showToast(err.message, 'error'); }
+            },
+            { variant: 'destructive', confirmText: 'Cancel Premium', icon: 'close-circle-outline' }
         );
     };
 

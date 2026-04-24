@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-    View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert,
+    View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,12 +8,14 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getRecentlyDeleted, restoreFromTrash, permanentlyDelete } from '../services/stories';
+import { useToast } from '../contexts/ToastContext';
 
 export default function RecentlyDeletedScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [items, setItems] = useState([]);
+    const { showConfirm } = useToast();
 
     useEffect(() => { loadItems(); }, []);
 
@@ -36,33 +38,24 @@ export default function RecentlyDeletedScreen() {
     };
 
     const handleRestore = (item) => {
-        Alert.alert('Restore', `Restore this ${item.itemType || 'item'}?`, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Restore', onPress: async () => {
-                await restoreFromTrash(item.id);
-                loadItems();
-            }},
-        ]);
+        showConfirm('Restore', `Restore this ${item.itemType || 'item'}?`,
+            async () => { await restoreFromTrash(item.id); loadItems(); },
+            { confirmText: 'Restore', icon: 'refresh-outline' }
+        );
     };
 
     const handlePermanentDelete = (item) => {
-        Alert.alert('Delete Permanently', 'This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: async () => {
-                await permanentlyDelete(item.id);
-                loadItems();
-            }},
-        ]);
+        showConfirm('Delete Permanently', 'This cannot be undone.',
+            async () => { await permanentlyDelete(item.id); loadItems(); },
+            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+        );
     };
 
     const handleDeleteAll = () => {
-        Alert.alert('Delete All Permanently', `Delete all ${items.length} items? This cannot be undone.`, [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete All', style: 'destructive', onPress: async () => {
-                for (const item of items) await permanentlyDelete(item.id);
-                setItems([]);
-            }},
-        ]);
+        showConfirm('Delete All Permanently', `Delete all ${items.length} items? This cannot be undone.`,
+            async () => { for (const item of items) await permanentlyDelete(item.id); setItems([]); },
+            { variant: 'destructive', confirmText: 'Delete All', icon: 'trash-outline' }
+        );
     };
 
     return (

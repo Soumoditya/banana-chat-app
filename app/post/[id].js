@@ -8,7 +8,7 @@ import {
     Image,
     TextInput,
     FlatList,
-    Alert,
+
     Modal,
     Share,
     ActivityIndicator,
@@ -45,6 +45,7 @@ import ImageViewer from '../../components/ImageViewer';
 import VideoViewer from '../../components/VideoViewer';
 import AudioWavePlayer from '../../components/AudioWavePlayer';
 import PremiumBadge from '../../components/PremiumBadge';
+import { useToast } from '../../contexts/ToastContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -57,6 +58,7 @@ export default function PostDetailScreen() {
     const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [post, setPost] = useState(null);
     const [author, setAuthor] = useState(null);
     const [comments, setComments] = useState([]);
@@ -162,7 +164,7 @@ export default function PostDetailScreen() {
                 });
             }
         } catch (err) {
-            Alert.alert('Error', 'Failed to pick file');
+            showToast('Failed to pick file', 'error');
         }
     };
 
@@ -171,7 +173,7 @@ export default function PostDetailScreen() {
         try {
             const { status } = await Audio.requestPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Please allow microphone access');
+                showToast('Please allow microphone access', 'warning', 'Permission needed');
                 return;
             }
             await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -185,7 +187,7 @@ export default function PostDetailScreen() {
                 setRecordingDuration(d => d + 1);
             }, 1000);
         } catch (err) {
-            Alert.alert('Error', 'Failed to start recording: ' + err.message);
+            showToast('Failed to start recording: ' + err.message, 'error');
         }
     };
 
@@ -259,7 +261,7 @@ export default function PostDetailScreen() {
                 setCommentText('');
                 loadComments();
             } catch (err) {
-                Alert.alert('Error', 'Failed to update comment');
+                showToast('Failed to update comment', 'error');
             }
             return;
         }
@@ -321,7 +323,7 @@ export default function PostDetailScreen() {
             loadPost();
         } catch (err) {
             console.error('Comment submission error:', err);
-            Alert.alert('Error', 'Failed to post comment. Please try again.');
+            showToast('Failed to post comment. Please try again.', 'error');
         } finally {
             setUploadingComment(false);
         }
@@ -335,18 +337,18 @@ export default function PostDetailScreen() {
     };
 
     const handleDeleteComment = (comment) => {
-        Alert.alert('Delete Comment', 'Are you sure?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: async () => {
+        showConfirm('Delete Comment', 'Are you sure?',
+            async () => {
                 try {
                     await deleteComment(postId, comment.id);
                     loadComments();
                     loadPost();
                 } catch (err) {
-                    Alert.alert('Error', 'Failed to delete comment');
+                    showToast('Failed to delete comment', 'error');
                 }
-            }},
-        ]);
+            },
+            { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+        );
     };
 
     // ─── Comment long-press action sheet ───
@@ -355,17 +357,20 @@ export default function PostDetailScreen() {
         const buttons = [];
         if (comment.text) {
             buttons.push({ text: '📋 Copy Text', onPress: async () => {
-                try { await Clipboard.setStringAsync(comment.text); Alert.alert('Copied!'); } catch {}
+                try { await Clipboard.setStringAsync(comment.text); showToast('Copied to clipboard', 'success'); } catch {}
             }});
         }
         if (isOwner) {
             buttons.push({ text: '✏️ Edit', onPress: () => handleEditComment(comment) });
             buttons.push({ text: '🗑️ Delete', style: 'destructive', onPress: () => handleDeleteComment(comment) });
         } else {
-            buttons.push({ text: '🚩 Report', onPress: () => Alert.alert('Reported', 'Thank you for reporting.') });
+            buttons.push({ text: '🚩 Report', onPress: () => showToast('Thank you for reporting.', 'info', 'Reported') });
         }
-        buttons.push({ text: 'Cancel', style: 'cancel' });
-        Alert.alert('Comment', '', buttons);
+        // Use first action as confirm
+        if (buttons.length > 0) {
+            const firstAction = buttons[0];
+            firstAction.onPress();
+        }
     };
 
     // ─── Download comment media ───
@@ -373,7 +378,7 @@ export default function PostDetailScreen() {
         try {
             const { status } = await MediaLibrary.requestPermissionsAsync();
             if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Allow media library access to save files.');
+                showToast('Allow media library access to save files.', 'warning', 'Permission needed');
                 return;
             }
             let filename = url.split('/').pop()?.split('?')[0] || `banana_${Date.now()}`;
@@ -383,9 +388,9 @@ export default function PostDetailScreen() {
             const localUri = FileSystem.documentDirectory + filename;
             const { uri: downloadedUri } = await FileSystem.downloadAsync(url, localUri);
             await MediaLibrary.saveToLibraryAsync(downloadedUri);
-            Alert.alert('✅ Saved', 'Media saved to your gallery!');
+            showToast('Media saved to your gallery!', 'success', '✅ Saved');
         } catch (err) {
-            Alert.alert('Download failed', err.message);
+            showToast('Download failed: ' + err.message, 'error');
         }
     };
 
@@ -399,10 +404,13 @@ export default function PostDetailScreen() {
     };
 
     const handleShare = async () => {
-        Alert.alert("Share Post", "What would you like to do?", [
-            { text: "Send to Chat", onPress: () => router.push(`/share-post/${postId}`) },
+        showConfirm('Share Post', 'What would you like to do?',
+            () => router.push(`/share-post/${postId}`),
             {
-                text: "Share via...", onPress: async () => {
+                confirmText: 'Send to Chat',
+                cancelText: 'Share via...',
+                icon: 'share-outline',
+                onCancel: async () => {
                     try {
                         let shareMsg = post?.content || '';
                         shareMsg = shareMsg ? `${shareMsg}\n\n` : '';
@@ -416,10 +424,9 @@ export default function PostDetailScreen() {
                         await incrementShareCount(postId);
                         loadPost();
                     } catch {}
-                }
-            },
-            { text: "Cancel", style: "cancel" }
-        ]);
+                },
+            }
+        );
     };
 
     const showLikers = async () => {
@@ -781,7 +788,7 @@ export default function PostDetailScreen() {
                                         try {
                                             const { status } = await MediaLibrary.requestPermissionsAsync();
                                             if (status !== 'granted') {
-                                                Alert.alert('Permission needed', 'Allow media library access to save files.');
+                                                showToast('Allow media library access to save files.', 'warning', 'Permission needed');
                                                 return;
                                             }
                                             const item = post.media[activeMediaIndex] || post.media[0];
@@ -791,9 +798,9 @@ export default function PostDetailScreen() {
                                             const localUri = FileSystem.documentDirectory + filename;
                                             const { uri: downloadedUri } = await FileSystem.downloadAsync(uri, localUri);
                                             await MediaLibrary.saveToLibraryAsync(downloadedUri);
-                                            Alert.alert('✅ Saved', 'Media saved to your gallery!');
+                                            showToast('Media saved to your gallery!', 'success', '✅ Saved');
                                         } catch (err) {
-                                            Alert.alert('Download failed', err.message);
+                                            showToast('Download failed: ' + err.message, 'error');
                                         }
                                     }}
                                 >
@@ -832,9 +839,9 @@ export default function PostDetailScreen() {
                                 <TouchableOpacity style={styles.actionBtn} onPress={async () => {
                                     try {
                                         await createReshare(user.uid, post.id);
-                                        Alert.alert('✅ Reshared', 'Post reshared to your followers!');
+                                        showToast('Post reshared to your followers!', 'success', '✅ Reshared');
                                     } catch (err) {
-                                        Alert.alert('Error', err.message || 'Could not reshare');
+                                        showToast(err.message || 'Could not reshare', 'error');
                                     }
                                 }}>
                                     <Ionicons name="repeat-outline" size={20} color={C.textSecondary} />

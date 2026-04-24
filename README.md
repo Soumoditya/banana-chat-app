@@ -34,7 +34,8 @@ banana/
 ├── contexts/               # React Context providers
 │   ├── AuthContext.js      # Authentication state, user session, admin detection
 │   ├── PremiumContext.js   # Premium subscription state & themed colors
-│   └── ThemeContext.js     # Dark/light theme management
+│   ├── ThemeContext.js     # Dark/light theme management
+│   └── ToastContext.js     # Animated toast notifications & confirmation modals
 ├── hooks/                  # Custom React hooks
 │   └── useAppTheme.js      # Universal theme hook (colors, fonts, skins)
 ├── services/               # Firebase data layer (Firestore + RTDB)
@@ -56,6 +57,7 @@ banana/
 │   ├── constants.js        # App-wide constants, streak emojis, feature flags
 │   ├── helpers.js          # Formatting, validation, text utilities
 │   ├── emoji.js            # Shared Apple emoji CDN utilities
+│   ├── animations.js       # Shared micro-animation presets (fadeIn, bounce, stagger)
 │   └── premium.js          # 6-tier plan definitions, feature gating, UI skins
 ├── website/                # Landing page (open-source)
 │   ├── index.html          # Premium bento-grid layout with app mockups
@@ -190,18 +192,21 @@ npx expo run:android
 
 ## Latest Activity
 
+- **feat:** Custom animated toast notification system replacing all native Alert popups
+- **security:** Moved all API keys to environment variables for safe open-sourcing
+- **feat:** Shared animation presets (fadeIn, bounce, scalePress, stagger)
+- **fix:** All in-app URLs now point to `banana-chat-app.vercel.app`
+- **feat:** About page with Website, GitHub, Terms & Privacy links
+- **refactor:** GitHub repo renamed to `banana-chat-app`, now public
 - **feat:** Production polish pass — 16-item bug fix and UX optimization
-- **fix:** Feed card spacing with margins, rounded corners, and skin-aware styling
 - **fix:** Global theme propagation — all screens now use dynamic `C.xxx` colors
 - **fix:** Stories/highlights persistence with resilient cross-collection fetching
-- **fix:** Profile username editing with uniqueness validation
-- **feat:** Searchable settings with keyword filtering
-- **feat:** Admin panel expansion with Reports and Activity Logs tabs
-- **refactor:** Eliminated circular `require()` dependencies in theme resolution
-- **refactor:** Emoji deduplication — shared `utils/emoji.js` module
-- **fix:** App icon switching safety (cosmetic-only on Android)
-- **fix:** Post feed scroll index recovery
+
+## Links
+
+- **Website:** [banana-chat-app.vercel.app](https://banana-chat-app.vercel.app)
+- **GitHub:** [github.com/Soumoditya/banana-chat-app](https://github.com/Soumoditya/banana-chat-app)
 
 ## License
 
-Private. All rights reserved.
+MIT — see [LICENSE](LICENSE) for details.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, TextInput, Alert, Modal, FlatList, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, TextInput, Modal, FlatList, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatTime, getInitials } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORY_LABELS } from '../../utils/constants';
+import { useToast } from '../../contexts/ToastContext';
 
 const { width, height } = Dimensions.get('window');
 
@@ -18,6 +19,7 @@ export default function StoryViewerScreen() {
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [stories, setStories] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [author, setAuthor] = useState(null);
@@ -89,25 +91,23 @@ export default function StoryViewerScreen() {
                 type: 'text',
             });
             setReplyText('');
-            Alert.alert('Sent!', 'Your reply was sent as a message.');
+            showToast('Your reply was sent as a message', 'success', 'Sent!');
         } catch (err) {
-            Alert.alert('Error', 'Could not send reply');
+            showToast('Could not send reply', 'error');
         }
     };
 
     const handleDeleteStory = async () => {
         const current = stories[currentIndex];
         if (current?.authorId === user?.uid) {
-            Alert.alert('Delete Story', 'Move to recently deleted? (30 days)', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete', style: 'destructive', onPress: async () => {
-                        await softDelete(current.id, 'story', current);
-                        if (stories.length <= 1) router.back();
-                        else nextStory();
-                    }
+            showConfirm('Delete Story', 'Move to recently deleted? (30 days)',
+                async () => {
+                    await softDelete(current.id, 'story', current);
+                    if (stories.length <= 1) router.back();
+                    else nextStory();
                 },
-            ]);
+                { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+            );
         }
     };
 
@@ -117,13 +117,14 @@ export default function StoryViewerScreen() {
 
         try {
             await archiveStory(current.id);
-            Alert.alert(
+            showConfirm(
                 current.type === 'public' ? 'Add to Spotlight' : 'Add to Memory',
                 'Story archived! Create a highlight from your archive.',
-                [{ text: 'Later' }, { text: 'Create Now', onPress: () => router.push('/highlight-editor') }]
+                () => router.push('/highlight-editor'),
+                { confirmText: 'Create Now', cancelText: 'Later', icon: 'bookmark-outline' }
             );
         } catch (err) {
-            Alert.alert('Error', err.message);
+            showToast(err.message, 'error');
         }
     };
 

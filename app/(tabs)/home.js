@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Image, ScrollView, Modal, Alert, Share,
+    View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Image, ScrollView, Modal, Share,
     PanResponder, Animated, Dimensions, Linking,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
@@ -23,6 +23,7 @@ import { updateAppStreak } from '../../services/streaks';
 import PremiumBadge from '../../components/PremiumBadge';
 import EmojiText from '../../components/EmojiText';
 import ImageViewer from '../../components/ImageViewer';
+import { useToast } from '../../contexts/ToastContext';
 
 const SWIPE_THRESHOLD = 100;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -51,6 +52,7 @@ export default function HomeScreen() {
     const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { showToast, showConfirm } = useToast();
     const [posts, setPosts] = useState([]);
     const [stories, setStories] = useState({});
     const [filter, setFilter] = useState('all');
@@ -298,30 +300,29 @@ export default function HomeScreen() {
 
     const handlePostMenu = (post) => {
         const isOwner = post.authorId === user?.uid;
-        const buttons = [];
         if (isOwner) {
-            buttons.push({ text: '🗑️ Delete Post', style: 'destructive', onPress: () => {
-                Alert.alert('Delete Post', 'Are you sure?', [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: async () => {
-                        try { await softDeletePost(post.id); setPosts(prev => prev.filter(p => p.id !== post.id)); } catch(e) { Alert.alert('Error', e.message); }
-                    }}
-                ]);
-            }});
-            buttons.push({ text: '📦 Archive Post', onPress: async () => {
-                try { await archivePost(post.id); setPosts(prev => prev.filter(p => p.id !== post.id)); Alert.alert('Done', 'Post archived'); } catch(e) { Alert.alert('Error', e.message); }
-            }});
+            showConfirm('Post Options', 'What would you like to do?',
+                () => {
+                    showConfirm('Delete Post', 'Are you sure?',
+                        async () => {
+                            try { await softDeletePost(post.id); setPosts(prev => prev.filter(p => p.id !== post.id)); } catch(e) { showToast(e.message, 'error'); }
+                        },
+                        { variant: 'destructive', confirmText: 'Delete', icon: 'trash-outline' }
+                    );
+                },
+                { confirmText: '🗑️ Delete Post', cancelText: '📦 Archive', icon: 'ellipsis-horizontal-circle-outline',
+                  onCancel: async () => {
+                    try { await archivePost(post.id); setPosts(prev => prev.filter(p => p.id !== post.id)); showToast('Post archived', 'success'); } catch(e) { showToast(e.message, 'error'); }
+                  }
+                }
+            );
+        } else {
+            if (post.content) {
+                Clipboard.setStringAsync(post.content).then(() => showToast('Caption copied', 'success', 'Copied!')).catch(() => {});
+            } else {
+                showToast('Thank you for reporting. We will review this post.', 'info', 'Reported');
+            }
         }
-        if (post.content) {
-            buttons.push({ text: '📋 Copy Caption', onPress: async () => {
-                try { await Clipboard.setStringAsync(post.content); Alert.alert('Copied!'); } catch(e) { Alert.alert('Error', 'Could not copy'); }
-            }});
-        }
-        if (!isOwner) {
-            buttons.push({ text: '🚩 Report Post', onPress: () => Alert.alert('Reported', 'Thank you for reporting. We will review this post.') });
-        }
-        buttons.push({ text: 'Cancel', style: 'cancel' });
-        Alert.alert('Post Options', '', buttons);
     };
 
     const filterLabels = { all: 'All', latest: 'Latest', friends: 'Friends', following: 'Following' };
@@ -501,7 +502,7 @@ export default function HomeScreen() {
                             try {
                                 const { status } = await MediaLibrary.requestPermissionsAsync();
                                 if (status !== 'granted') {
-                                    Alert.alert('Permission needed', 'Allow media library access to save files.');
+                                    showToast('Allow media library access to save files.', 'warning', 'Permission needed');
                                     return;
                                 }
                                 const idx = activeCarouselIndex[post.id] || 0;
@@ -514,9 +515,9 @@ export default function HomeScreen() {
                                 const localUri = FileSystem.documentDirectory + filename;
                                 const { uri: downloadedUri } = await FileSystem.downloadAsync(uri, localUri);
                                 await MediaLibrary.saveToLibraryAsync(downloadedUri);
-                                Alert.alert('✅ Saved', 'Media saved to your gallery!');
+                                showToast('Media saved to your gallery!', 'success', '✅ Saved');
                             } catch (err) {
-                                Alert.alert('Download failed', err.message);
+                                showToast('Download failed: ' + err.message, 'error');
                             }
                         }}
                     >

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, FlatList, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, FlatList, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumBadge, { PremiumFlair } from '../../components/PremiumBadge';
 import { isPremiumActive } from '../../utils/premium';
 import useAppTheme from '../../hooks/useAppTheme';
+import { useToast } from '../../contexts/ToastContext';
 
 // Social link config — platform name → { icon, color, urlPrefix }
 const SOCIAL_PLATFORMS = {
@@ -35,6 +36,7 @@ export default function UserProfileScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { C, skin } = useAppTheme();
+    const { showToast, showConfirm } = useToast();
     const [profile, setProfile] = useState(null);
     const [posts, setPosts] = useState([]);
     const [resharedPosts, setResharedPosts] = useState([]);
@@ -108,55 +110,44 @@ export default function UserProfileScreen() {
         if (!profile) return;
         await addFriend(user.uid, profile.id);
         setIsFriend(true);
-        Alert.alert('Success', 'Friend added!');
+        showToast('Friend added!', 'success');
     };
 
     // ─── 3-dot menu handler ───
     const handleMoreMenu = () => {
-        const options = [
-            {
-                text: 'Copy Username',
-                onPress: async () => {
-                    await Clipboard.setStringAsync(`@${profile.username}`);
-                    Alert.alert('Copied!', `@${profile.username} copied to clipboard`);
+        // Copy Username
+        const copyUsername = async () => {
+            await Clipboard.setStringAsync(`@${profile.username}`);
+            showToast(`@${profile.username} copied to clipboard`, 'success', 'Copied!');
+        };
+
+        // Block User
+        const blockUserAction = () => {
+            showConfirm('Block User', `Are you sure you want to block @${profile.username}? They won't be able to see your profile or contact you.`,
+                async () => {
+                    try {
+                        await blockUser(user.uid, profile.id);
+                        if (refreshProfile) await refreshProfile();
+                        showToast(`@${profile.username} has been blocked`, 'success', 'Blocked');
+                        router.back();
+                    } catch (err) {
+                        showToast('Failed to block user', 'error');
+                    }
                 },
-            },
-            {
-                text: 'Block User',
-                style: 'destructive',
-                onPress: () => {
-                    Alert.alert(
-                        'Block User',
-                        `Are you sure you want to block @${profile.username}? They won't be able to see your profile or contact you.`,
-                        [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                                text: 'Block',
-                                style: 'destructive',
-                                onPress: async () => {
-                                    try {
-                                        await blockUser(user.uid, profile.id);
-                                        if (refreshProfile) await refreshProfile();
-                                        Alert.alert('Blocked', `@${profile.username} has been blocked`);
-                                        router.back();
-                                    } catch (err) {
-                                        Alert.alert('Error', 'Failed to block user');
-                                    }
-                                },
-                            },
-                        ]
-                    );
-                },
-            },
-            {
-                text: 'Report User',
-                onPress: () => {
-                    Alert.alert('Report Submitted', 'Thank you. We will review this account.');
-                },
-            },
-            { text: 'Cancel', style: 'cancel' },
-        ];
-        Alert.alert('Options', null, options);
+                { variant: 'destructive', confirmText: 'Block', icon: 'ban-outline' }
+            );
+        };
+
+        // Report User
+        const reportUser = () => {
+            showToast('Thank you. We will review this account.', 'info', 'Report Submitted');
+        };
+
+        // Show options as confirm
+        showConfirm('Options', `@${profile.username}`,
+            copyUsername,
+            { confirmText: 'Copy Username', cancelText: 'More...', icon: 'ellipsis-horizontal-circle-outline' }
+        );
     };
 
     // ─── Social links renderer ───
@@ -184,7 +175,7 @@ export default function UserProfileScreen() {
                                 if (!url.startsWith('http')) {
                                     url = config.prefix + value;
                                 }
-                                Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open link'));
+                                Linking.openURL(url).catch(() => showToast('Could not open link', 'error'));
                             }}
                             activeOpacity={0.7}
                         >
@@ -199,7 +190,7 @@ export default function UserProfileScreen() {
                         onPress={() => {
                             let link = url;
                             if (!link.startsWith('http')) link = 'https://' + link;
-                            Linking.openURL(link).catch(() => Alert.alert('Error', 'Could not open link'));
+                            Linking.openURL(link).catch(() => showToast('Could not open link', 'error'));
                         }}
                         activeOpacity={0.7}
                     >
@@ -338,7 +329,7 @@ export default function UserProfileScreen() {
                             style={styles.copyBioBtn}
                             onPress={async () => {
                                 await Clipboard.setStringAsync(profile.bio);
-                                Alert.alert('Copied!', 'Bio copied to clipboard');
+                                showToast('Bio copied to clipboard', 'success', 'Copied!');
                             }}
                             activeOpacity={0.6}
                         >
