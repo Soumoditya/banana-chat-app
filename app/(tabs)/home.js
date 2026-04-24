@@ -14,7 +14,7 @@ import { Colors, Spacing, FontSize, BorderRadius, Shadow } from '../../utils/the
 import { Ionicons } from '@expo/vector-icons';
 import { getFeedPosts, upvotePost, downvotePost, savePost, unsavePost, incrementShareCount, softDeletePost, archivePost, votePoll, getPost, addPostReaction } from '../../services/posts';
 import { createReshare, undoReshare, getUserResharedPostIds } from '../../services/reshares';
-import { getStories } from '../../services/stories';
+import { getStories, cleanupExpiredStories } from '../../services/stories';
 import { getUserProfile } from '../../services/users';
 import { formatTime, formatCount, getInitials } from '../../utils/helpers';
 import { FEED_FILTERS } from '../../utils/constants';
@@ -24,6 +24,8 @@ import PremiumBadge from '../../components/PremiumBadge';
 import EmojiText from '../../components/EmojiText';
 import ImageViewer from '../../components/ImageViewer';
 import { useToast } from '../../contexts/ToastContext';
+import AnimatedPress, { SkeletonShimmer } from '../../components/AnimatedPress';
+import DoubleTapLike, { FadeInView, AnimatedLikeButton } from '../../components/DoubleTapLike';
 
 const SWIPE_THRESHOLD = 100;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -144,6 +146,8 @@ export default function HomeScreen() {
 
     const loadStories = useCallback(async () => {
         try {
+            // Auto-archive expired stories so highlights work
+            await cleanupExpiredStories().catch(() => {});
             const storyData = await getStories(userProfile);
             // Filter out stories from blocked users
             const blockedIds = userProfile?.blockedUsers || [];
@@ -308,11 +312,23 @@ export default function HomeScreen() {
                 }
             );
         } else {
-            if (post.content) {
-                Clipboard.setStringAsync(post.content).then(() => showToast('Caption copied', 'success', 'Copied!')).catch(() => {});
-            } else {
-                showToast('Thank you for reporting. We will review this post.', 'info', 'Reported');
-            }
+            showConfirm('Post Options', 'What would you like to do?',
+                () => {
+                    if (post.content) {
+                        Clipboard.setStringAsync(post.content).then(() => showToast('Caption copied', 'success', 'Copied!')).catch(() => {});
+                    } else {
+                        showToast('No caption to copy', 'info');
+                    }
+                },
+                {
+                    confirmText: '📋 Copy Caption',
+                    cancelText: '🚩 Report',
+                    icon: 'ellipsis-horizontal-circle-outline',
+                    onCancel: () => {
+                        showToast('Thank you for reporting. We will review this post.', 'info', 'Reported');
+                    },
+                }
+            );
         }
     };
 
@@ -349,7 +365,7 @@ export default function HomeScreen() {
         const isSaved = savedPosts.includes(post.id);
 
         return (
-            <View style={[styles.postCard, { backgroundColor: C.surface, borderBottomColor: C.border, ...skin.cardStyle }]}>
+            <FadeInView style={[styles.postCard, { backgroundColor: C.surface, borderBottomColor: C.border, ...skin.cardStyle }]}>
                 {post.isReshare && post.resharerId && (
                     <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 }} onPress={() => router.push(`/user/${authors[post.resharerId]?.username}`)}>
                         <Ionicons name="repeat" size={14} color={C.textSecondary} style={{ marginRight: 6 }} />
@@ -392,7 +408,7 @@ export default function HomeScreen() {
                 </View>
 
                 {post.content ? (
-                    <Text style={[styles.postContent, { color: C.text }, activeFont.fontFamily && { fontFamily: activeFont.fontFamily }]} selectable>
+                    <EmojiText iosEmoji={iosEmojiEnabled} style={[styles.postContent, { color: C.text }, activeFont.fontFamily && { fontFamily: activeFont.fontFamily }]} selectable>
                         {post.content.split(/(@\w+|https?:\/\/[^\s]+)/g).map((part, i) => {
                             if (part && part.startsWith('@')) {
                                 return (
@@ -410,7 +426,7 @@ export default function HomeScreen() {
                             }
                             return <Text key={i}>{part}</Text>;
                         })}
-                    </Text>
+                    </EmojiText>
                 ) : null}
 
                 {post.media?.length > 0 && (() => {
@@ -419,7 +435,10 @@ export default function HomeScreen() {
                     const isMuted = mutedVideos[post.id] !== false; // default muted
                     const isVisible = post.id === visiblePostId;
                     return (
-                        <View style={styles.mediaContainer}>
+                        <DoubleTapLike
+                            onDoubleTap={() => { if (!isUpvoted) handleUpvote(post.id); }}
+                            style={styles.mediaContainer}
+                        >
                             {mediaItems.length === 1 ? (() => {
                                 const item = mediaItems[0];
                                 const uri = typeof item === 'string' ? item : item?.uri;
@@ -476,7 +495,7 @@ export default function HomeScreen() {
                                     </View>
                                 </View>
                             )}
-                        </View>
+                        </DoubleTapLike>
                     );
                 })()}
 
@@ -535,9 +554,12 @@ export default function HomeScreen() {
 
                 <View style={styles.postActions}>
                     <View style={styles.voteContainer}>
-                        <TouchableOpacity onPress={() => handleUpvote(post.id)} style={styles.voteBtn}>
-                            <Ionicons name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} size={24} color={isUpvoted ? C.upvote || Colors.upvote : C.textSecondary} />
-                        </TouchableOpacity>
+                        <AnimatedLikeButton
+                            isLiked={isUpvoted}
+                            onPress={() => handleUpvote(post.id)}
+                            size={24}
+                            color={isUpvoted ? C.upvote || Colors.upvote : C.textSecondary}
+                        />
                         <Text style={[styles.voteCount, (post.upvotes - post.downvotes) > 0 && styles.voteCountPositive]}>
                             {formatCount((post.upvotes || 0) - (post.downvotes || 0))}
                         </Text>
@@ -610,23 +632,27 @@ export default function HomeScreen() {
                         ))}
                     </View>
                 )}
-            </View>
+            </FadeInView>
         );
     };
 
-    // Loading skeleton row
+    // Loading skeleton row — animated shimmer
     const renderSkeleton = () => (
         <View style={styles.skeletonCard}>
             <View style={styles.skeletonHeader}>
-                <View style={styles.skeletonAvatar} />
+                <SkeletonShimmer width={40} height={40} borderRadius={20} />
                 <View style={{ flex: 1, gap: 8 }}>
-                    <View style={[styles.skeletonLine, { width: '50%' }]} />
-                    <View style={[styles.skeletonLine, { width: '30%' }]} />
+                    <SkeletonShimmer width={'50%'} height={12} />
+                    <SkeletonShimmer width={'30%'} height={10} />
                 </View>
             </View>
-            <View style={[styles.skeletonLine, { width: '90%', marginBottom: 8 }]} />
-            <View style={[styles.skeletonLine, { width: '70%', marginBottom: 16 }]} />
-            <View style={styles.skeletonImage} />
+            <SkeletonShimmer width={'90%'} height={14} style={{ marginTop: 12 }} />
+            <SkeletonShimmer width={'100%'} height={200} borderRadius={12} style={{ marginTop: 10 }} />
+            <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
+                <SkeletonShimmer width={60} height={12} />
+                <SkeletonShimmer width={60} height={12} />
+                <SkeletonShimmer width={60} height={12} />
+            </View>
         </View>
     );
 

@@ -66,7 +66,7 @@ export const PremiumProvider = ({ children }) => {
 
         // ── Feature flags ──
         const iosEmojiEnabled = isActive && checkIOSEmoji(userProfile) && prefs.iosEmoji !== false;
-        const downloadMediaEnabled = isActive && checkDownloadMedia(userProfile) && prefs.downloadMedia !== false;
+        const downloadMediaEnabled = isActive && checkDownloadMedia(userProfile);
 
         return {
             // Status

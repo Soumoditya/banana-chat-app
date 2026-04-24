@@ -354,22 +354,35 @@ export default function PostDetailScreen() {
     // ─── Comment long-press action sheet ───
     const handleCommentLongPress = (comment) => {
         const isOwner = comment.authorId === user?.uid;
-        const buttons = [];
-        if (comment.text) {
-            buttons.push({ text: '📋 Copy Text', onPress: async () => {
+
+        const copyAction = async () => {
+            if (comment.text) {
                 try { await Clipboard.setStringAsync(comment.text); showToast('Copied to clipboard', 'success'); } catch {}
-            }});
-        }
+            }
+        };
+
         if (isOwner) {
-            buttons.push({ text: '✏️ Edit', onPress: () => handleEditComment(comment) });
-            buttons.push({ text: '🗑️ Delete', style: 'destructive', onPress: () => handleDeleteComment(comment) });
+            // Owner: Copy → then offer Edit/Delete
+            showConfirm('Comment Options', comment.text ? comment.text.substring(0, 60) + '...' : 'Your comment',
+                () => handleEditComment(comment),
+                {
+                    confirmText: '✏️ Edit',
+                    cancelText: '🗑️ Delete',
+                    icon: 'chatbubble-ellipses-outline',
+                    onCancel: () => handleDeleteComment(comment),
+                }
+            );
         } else {
-            buttons.push({ text: '🚩 Report', onPress: () => showToast('Thank you for reporting.', 'info', 'Reported') });
-        }
-        // Use first action as confirm
-        if (buttons.length > 0) {
-            const firstAction = buttons[0];
-            firstAction.onPress();
+            // Non-owner: Copy → Report
+            showConfirm('Comment Options', comment.text ? comment.text.substring(0, 60) + '...' : 'Comment',
+                copyAction,
+                {
+                    confirmText: '📋 Copy Text',
+                    cancelText: '🚩 Report',
+                    icon: 'chatbubble-ellipses-outline',
+                    onCancel: () => showToast('Thank you for reporting.', 'info', 'Reported'),
+                }
+            );
         }
     };
 
@@ -480,7 +493,21 @@ export default function PostDetailScreen() {
         if (comment.mediaType === 'file') {
             return (
                 <TouchableOpacity
-                    onPress={() => Linking.openURL(comment.mediaUrl)}
+                    onPress={async () => {
+                        try {
+                            const supported = await Linking.canOpenURL(comment.mediaUrl);
+                            if (supported) {
+                                await Linking.openURL(comment.mediaUrl);
+                            } else {
+                                // Fallback: copy link so user can open in browser
+                                await Clipboard.setStringAsync(comment.mediaUrl);
+                                showToast('Link copied! Open in your browser.', 'info', 'Copied Link');
+                            }
+                        } catch (err) {
+                            await Clipboard.setStringAsync(comment.mediaUrl);
+                            showToast('Link copied! Open in your browser.', 'info', 'Copied Link');
+                        }
+                    }}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, backgroundColor: Colors.surfaceLight, borderRadius: 10, padding: 10, maxWidth: 220 }}
                 >
                     <Ionicons name="document-outline" size={24} color={Colors.primary} />
@@ -585,7 +612,7 @@ export default function PostDetailScreen() {
         const isOP = post && comment.authorId === post.authorId;
         return (
             <View key={comment.id} style={{ marginLeft: depth * 16, borderLeftWidth: depth > 0 ? 1 : 0, borderColor: Colors.border, paddingLeft: depth > 0 ? 8 : 0, marginTop: 12 }}>
-                <TouchableOpacity activeOpacity={0.8} onLongPress={() => handleCommentLongPress(comment)}>
+                <View>
                 <View style={styles.commentRow}>
                     <TouchableOpacity onPress={() => router.push(`/user/${comment.authorId}`)}>
                         {cAuthor?.avatar ? (
@@ -633,6 +660,10 @@ export default function PostDetailScreen() {
                             <TouchableOpacity onPress={() => setShowCommentReactionPicker(showCommentReactionPicker === comment.id ? null : comment.id)} style={{ marginLeft: Spacing.sm }}>
                                 <Ionicons name="happy-outline" size={16} color={showCommentReactionPicker === comment.id ? Colors.primary : Colors.textTertiary} />
                             </TouchableOpacity>
+                            {/* More options button */}
+                            <TouchableOpacity onPress={() => handleCommentLongPress(comment)} style={{ marginLeft: 'auto', padding: 4 }}>
+                                <Ionicons name="ellipsis-horizontal" size={16} color={Colors.textTertiary} />
+                            </TouchableOpacity>
                         </View>
 
                         {/* Emoji reaction picker */}
@@ -663,7 +694,7 @@ export default function PostDetailScreen() {
                         )}
                     </View>
                 </View>
-                </TouchableOpacity>
+                </View>
                 {comment.children && comment.children.length > 0 && (
                     <View style={{ marginTop: 4 }}>
                         {comment.children.map(child => renderCommentNode(child, depth + 1))}

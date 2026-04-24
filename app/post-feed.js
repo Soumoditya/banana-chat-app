@@ -279,7 +279,7 @@ export default function PostFeedScreen() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                    <Ionicons name="arrow-back" size={24} color={C.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{title}</Text>
                 <View style={{ width: 24 }} />
@@ -300,7 +300,7 @@ export default function PostFeedScreen() {
                 contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
                 ListEmptyComponent={() => (
                     <View style={styles.empty}>
-                        <Ionicons name="images-outline" size={56} color={Colors.textTertiary} />
+                        <Ionicons name="images-outline" size={56} color={C.textTertiary} />
                         <Text style={styles.emptyText}>No posts</Text>
                     </View>
                 )}

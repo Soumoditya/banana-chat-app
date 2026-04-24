@@ -9,6 +9,7 @@ import { collection, query, where, onSnapshot, limit } from 'firebase/firestore'
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeToUnreadChats } from '../../services/chat';
+import AnimatedPress from '../../components/AnimatedPress';
 
 // Badge dot shown on notification & chat tabs
 function TabBadge({ iconFocused, iconOutline, count, color, size, focused }) {
@@ -147,15 +148,17 @@ const styles = StyleSheet.create({
     },
     badge: {
         position: 'absolute',
-        top: 0,
-        right: -2,
-        backgroundColor: Colors.error || '#FF3D71',
-        borderRadius: 8,
-        minWidth: 16,
-        height: 16,
+        top: -2,
+        right: -4,
+        backgroundColor: '#FF3B30',
+        borderRadius: 9,
+        minWidth: 18,
+        height: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 3,
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: '#0a0a14',
     },
     badgeText: {
         color: '#fff',

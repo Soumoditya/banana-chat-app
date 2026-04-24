@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Banana Chat — Where Conversations Come Alive 🍌</title>
-    <meta name="description" content="A premium social messaging platform with real-time chat, stories, media posts, voice notes, video calls, and a 4-tier premium system. Built with React Native & Firebase.">
+    <meta name="description" content="A premium social messaging platform with real-time chat, stories, media posts, voice notes, video calls, and a 6-tier premium system. Built with React Native & Firebase.">
     <meta name="theme-color" content="#FFD60A">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍌</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -48,11 +48,11 @@
         <div class="hero-glow"></div>
         <div class="hero-glow hero-glow-2"></div>
         <div class="hero-content">
-            <div class="hero-badge"><span class="badge-dot"></span>v3.2.0 · Production Ready</div>
+            <div class="hero-badge"><span class="badge-dot"></span>v4.8.0 · Production Ready</div>
             <h1 class="hero-title">Chat that doesn't<br><span class="hero-highlight">suck.</span></h1>
             <p class="hero-sub">Real-time messaging, stories, media posts, voice notes, video calls, and a premium system that actually gives you something. Built for Android. Built different.</p>
             <div class="hero-actions">
-                <a href="https://github.com/Soumoditya/banana-chat-app/releases/latest" target="_blank" class="btn btn-primary"><i data-lucide="download" class="icon-sm"></i>Download APK</a>
+                <a href="/banana-chat.apk" download class="btn btn-primary"><i data-lucide="download" class="icon-sm"></i>Download APK</a>
                 <a href="https://github.com/Soumoditya/banana-chat-app" target="_blank" class="btn btn-ghost"><i data-lucide="github" class="icon-sm"></i>Source Code</a>
             </div>
             <div class="hero-chips">
@@ -89,7 +89,7 @@
         <div class="stats-grid">
             <div class="stat-item"><span class="stat-num" data-target="30">0</span><span class="stat-suffix">+</span><span class="stat-label">Screens</span></div>
             <div class="stat-item"><span class="stat-num" data-target="15">0</span><span class="stat-suffix">K+</span><span class="stat-label">Lines of Code</span></div>
-            <div class="stat-item"><span class="stat-num" data-target="4">0</span><span class="stat-label">Premium Tiers</span></div>
+            <div class="stat-item"><span class="stat-num" data-target="6">0</span><span class="stat-label">Premium Tiers</span></div>
             <div class="stat-item"><span class="stat-num" data-target="0">0</span><span class="stat-label">Known Bugs</span></div>
         </div>
     </section>
@@ -109,7 +109,7 @@
             <div class="why-card reveal">
                 <div class="why-icon why-icon-purple"><i data-lucide="palette" class="icon-lg"></i></div>
                 <h3>Make It Yours</h3>
-                <p>Custom themes, fonts, UI skins, app icons, iOS emojis — 4 premium tiers that let you express yourself beyond just a profile pic.</p>
+                <p>Custom themes, fonts, UI skins, app icons, iOS emojis — 6 premium tiers that let you express yourself beyond just a profile pic.</p>
             </div>
             <div class="why-card reveal">
                 <div class="why-icon why-icon-green"><i data-lucide="lock-keyhole" class="icon-lg"></i></div>
@@ -246,34 +246,57 @@
     <section class="premium" id="premium">
         <div class="section-header">
             <span class="section-tag">Premium</span>
-            <h2 class="section-title">Four tiers.<br><span class="text-gradient">Zero compromises.</span></h2>
-            <p class="section-sub">Every plan unlocks real features — not just a badge color.</p>
+            <h2 class="section-title">Six tiers.<br><span class="text-gradient">Zero compromises.</span></h2>
+            <p class="section-sub">From Standard to VIP — every tier unlocks real features, not just a badge color.</p>
         </div>
         <div class="tiers-grid">
-            <div class="tier-card reveal" style="--tier-color: #3B82F6">
-                <div class="tier-icon"><i data-lucide="badge-check" style="color:#3B82F6"></i></div>
-                <div class="tier-badge" style="background: #3B82F6">Starter</div>
-                <div class="tier-price">₹49<span>/mo</span></div>
+            <div class="tier-card reveal" style="--tier-color: #1DA1F2">
+                <div class="tier-icon"><i data-lucide="badge-check" style="color:#1DA1F2"></i></div>
+                <div class="tier-badge" style="background: #1DA1F2">Standard</div>
+                <div class="tier-price">₹99<span>/mo</span></div>
                 <ul class="tier-features">
                     <li><i data-lucide="check" class="icon-xs"></i>Blue verified badge</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>2 premium fonts</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Extended post length</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>48h story duration</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Up to 5 media per post</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>iOS emoji support</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>15 media per post</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>800 char posts</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Ad-free experience</li>
+                </ul>
+            </div>
+            <div class="tier-card reveal" style="--tier-color: #FFD700">
+                <div class="tier-icon"><i data-lucide="award" style="color:#FFD700"></i></div>
+                <div class="tier-badge" style="background: #FFD700; color: #000">Premium</div>
+                <div class="tier-price">₹199<span>/mo</span></div>
+                <ul class="tier-features">
+                    <li><i data-lucide="check" class="icon-xs"></i>Gold verified badge</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>3 font styles</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>2 themes</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Media downloads</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>1000 char posts</li>
                 </ul>
             </div>
             <div class="tier-card tier-popular reveal" style="--tier-color: #F59E0B">
                 <div class="tier-pop-tag"><i data-lucide="crown" class="icon-xs"></i>Most Popular</div>
-                <div class="tier-icon"><i data-lucide="award" style="color:#F59E0B"></i></div>
-                <div class="tier-badge" style="background: #F59E0B; color: #000">Pro</div>
-                <div class="tier-price">₹149<span>/mo</span></div>
+                <div class="tier-icon"><i data-lucide="star" style="color:#F59E0B"></i></div>
+                <div class="tier-badge" style="background: #F59E0B; color: #000">Premium+</div>
+                <div class="tier-price">₹299<span>/mo</span></div>
                 <ul class="tier-features">
-                    <li><i data-lucide="check" class="icon-xs"></i>Gold verified badge</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>All fonts + themes</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>iOS emoji everywhere</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Gold+ verified badge</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>5 fonts + 5 themes</li>
                     <li><i data-lucide="check" class="icon-xs"></i>Profile analytics</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>10 media per post</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Media downloads</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Glass UI skin</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Custom app icons</li>
+                </ul>
+            </div>
+            <div class="tier-card reveal" style="--tier-color: #8B5CF6">
+                <div class="tier-icon"><i data-lucide="shield" style="color:#8B5CF6"></i></div>
+                <div class="tier-badge" style="background: #8B5CF6">Elite</div>
+                <div class="tier-price">₹399<span>/mo</span></div>
+                <ul class="tier-features">
+                    <li><i data-lucide="check" class="icon-xs"></i>Purple verified badge</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Glassmorphism UI</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Priority search</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>48h stories</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Everything in Premium+</li>
                 </ul>
             </div>
             <div class="tier-card reveal" style="--tier-color: #A855F7">
@@ -281,11 +304,11 @@
                 <div class="tier-badge" style="background: #A855F7">Super</div>
                 <div class="tier-price">₹499<span>/mo</span></div>
                 <ul class="tier-features">
-                    <li><i data-lucide="check" class="icon-xs"></i>Purple badge + all skins</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Custom app icons</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Golden Banana badge</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Liquid Glass UI</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Upload custom icons</li>
                     <li><i data-lucide="check" class="icon-xs"></i>Unlimited media</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Priority support</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Everything in Pro</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Everything in Elite</li>
                 </ul>
             </div>
             <div class="tier-card reveal" style="--tier-color: #FFD700">
@@ -293,10 +316,10 @@
                 <div class="tier-badge" style="background: linear-gradient(135deg, #FFD700, #FF9500); color: #000">VIP</div>
                 <div class="tier-price">₹999<span>/mo</span></div>
                 <ul class="tier-features">
-                    <li><i data-lucide="check" class="icon-xs"></i>Golden Banana badge</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Upload custom icons</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Black Banana badge</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>Aurora Shift UI</li>
+                    <li><i data-lucide="check" class="icon-xs"></i>72h stories</li>
                     <li><i data-lucide="check" class="icon-xs"></i>Everything unlocked</li>
-                    <li><i data-lucide="check" class="icon-xs"></i>Unlimited everything</li>
                     <li><i data-lucide="check" class="icon-xs"></i>First access to features</li>
                 </ul>
             </div>
@@ -331,7 +354,7 @@
             <p>Every screen, every service, every pixel — open on GitHub. Fork it, learn from it, build on it.</p>
             <div class="oss-actions">
                 <a href="https://github.com/Soumoditya/banana-chat-app" target="_blank" class="btn btn-primary"><i data-lucide="star" class="icon-sm"></i>Star on GitHub</a>
-                <a href="https://github.com/Soumoditya/banana-chat-app/releases/latest" target="_blank" class="btn btn-ghost"><i data-lucide="download" class="icon-sm"></i>Get the APK</a>
+                <a href="/banana-chat.apk" download class="btn btn-ghost"><i data-lucide="download" class="icon-sm"></i>Get the APK</a>
             </div>
         </div>
     </section>
@@ -340,8 +363,8 @@
     <section class="developer" id="developer">
         <div class="section-header">
             <span class="section-tag">Creator</span>
-            <h2 class="section-title">Solo built.<br><span class="text-gradient">Every single line.</span></h2>
-            <p class="section-sub">15,000+ lines of production React Native — designed, coded, and shipped by one person.</p>
+            <h2 class="section-title">Built by one.<br><span class="text-gradient">Used by many.</span></h2>
+            <p class="section-sub">From architecture to pixel — a solo full-stack project.</p>
         </div>
         <div class="dev-card-premium reveal">
             <div class="dev-card-glow"></div>
@@ -351,11 +374,11 @@
                 </div>
                 <div class="dev-identity">
                     <h3>Soumoditya Pramanik</h3>
-                    <p class="dev-role"><i data-lucide="sparkles" class="icon-xs"></i> Full-Stack Developer & Published Author</p>
+                    <p class="dev-role"><i data-lucide="sparkles" class="icon-xs"></i> Full-Stack Developer</p>
                     <p class="dev-location"><i data-lucide="map-pin" class="icon-xs"></i> West Bengal, India</p>
                 </div>
             </div>
-            <p class="dev-bio">BCA Graduate from Brainware University. Built Banana Chat from zero — every screen, every Firebase service, every pixel of UI. From Firestore security rules to custom waveform audio players, from 6-tier premium subscriptions to a full admin moderation panel. Beyond code, a published author exploring Shankaracharya's philosophy.</p>
+            <p class="dev-bio">BCA graduate. Designed the architecture, wrote the backend, built every screen, and shipped the APK — all solo. Banana Chat started as a learning project and turned into 15K+ lines of production React Native across 30+ screens, 10+ Firebase services, and a full premium subscription system.</p>
             <div class="dev-stats-row">
                 <div class="dev-stat"><span class="dev-stat-num">15K+</span><span class="dev-stat-label">Lines of Code</span></div>
                 <div class="dev-stat"><span class="dev-stat-num">30+</span><span class="dev-stat-label">Screens</span></div>
@@ -387,12 +410,12 @@
                     <a href="#stack">Stack</a>
                     <a href="#developer">Developer</a>
                     <a href="https://github.com/Soumoditya/banana-chat-app" target="_blank">GitHub</a>
-                    <a href="https://github.com/Soumoditya/banana-chat-app/releases/latest" target="_blank">Download</a>
+                    <a href="/banana-chat.apk" download>Download</a>
                 </div>
             </div>
             <div class="footer-bottom">
                 <p class="footer-copy">Built with obsession by <a href="https://soumodityapramanik.in" target="_blank">Soumoditya Pramanik</a></p>
-                <p class="footer-version">v3.2.0 · April 2026 · <a href="LICENSE" style="color: var(--text-dim); text-decoration: underline;">MIT License</a></p>
+                <p class="footer-version">v4.8.0 · April 2026 · <a href="LICENSE" style="color: var(--text-dim); text-decoration: underline;">MIT License</a></p>
             </div>
         </div>
     </footer>

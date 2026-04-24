@@ -396,7 +396,7 @@ ul { list-style: none; }
 }
 .tiers-grid {
     max-width: 1100px; margin: 0 auto;
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 16px;
 }
 .tier-card {

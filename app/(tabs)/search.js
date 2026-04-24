@@ -126,23 +126,23 @@ export default function ExploreScreen() {
         if (!suggestedUsers || suggestedUsers.length === 0) return null;
         return (
             <View style={{ marginBottom: Spacing.md, paddingTop: Spacing.sm }}>
-                <Text style={{ fontSize: FontSize.md, fontWeight: '700', color: Colors.text, marginLeft: Spacing.md, marginBottom: Spacing.sm }}>Suggested for you</Text>
+                <Text style={{ fontSize: FontSize.md, fontWeight: '700', color: C.text, marginLeft: Spacing.md, marginBottom: Spacing.sm }}>Suggested for you</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: Spacing.md, gap: Spacing.sm }}>
                     {suggestedUsers.map(u => (
-                        <TouchableOpacity key={u.id} style={{ width: 120, padding: Spacing.sm, backgroundColor: Colors.surface, borderRadius: BorderRadius.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border }} onPress={() => router.push(`/user/${u.id}`)}>
+                        <TouchableOpacity key={u.id} style={{ width: 120, padding: Spacing.sm, backgroundColor: C.surface, borderRadius: BorderRadius.md, alignItems: 'center', borderWidth: 1, borderColor: C.border }} onPress={() => router.push(`/user/${u.id}`)}>
                             {u.avatar ? (
                                 <Image source={{ uri: u.avatar }} style={{ width: 60, height: 60, borderRadius: 30, marginBottom: Spacing.xs }} />
                             ) : (
-                                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: Colors.border, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.xs }}>
-                                    <Text style={{ color: Colors.text, fontWeight: 'bold' }}>{getInitials(u.displayName)}</Text>
+                                <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: C.border, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.xs }}>
+                                    <Text style={{ color: C.text, fontWeight: 'bold' }}>{getInitials(u.displayName)}</Text>
                                 </View>
                             )}
-                            <Text style={{ fontSize: FontSize.sm, fontWeight: '600', color: Colors.text }} numberOfLines={1}>{u.displayName}</Text>
-                            <Text style={{ fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm }} numberOfLines={1}>@{u.username}</Text>
+                            <Text style={{ fontSize: FontSize.sm, fontWeight: '600', color: C.text }} numberOfLines={1}>{u.displayName}</Text>
+                            <Text style={{ fontSize: FontSize.xs, color: C.textSecondary, marginBottom: Spacing.sm }} numberOfLines={1}>@{u.username}</Text>
                         <TouchableOpacity
                             style={[
-                                { backgroundColor: Colors.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: BorderRadius.sm, width: '100%', alignItems: 'center' },
-                                localFollowing.has(u.id) && { backgroundColor: Colors.surfaceLight },
+                                { backgroundColor: C.primary, paddingVertical: 6, paddingHorizontal: 12, borderRadius: BorderRadius.sm, width: '100%', alignItems: 'center' },
+                                localFollowing.has(u.id) && { backgroundColor: C.surfaceLight || Colors.surfaceLight },
                             ]}
                             disabled={localFollowing.has(u.id)}
                             onPress={async () => {
@@ -152,7 +152,7 @@ export default function ExploreScreen() {
                                 await followUser(user.uid, u.id);
                             }}
                         >
-                            <Text style={{ color: localFollowing.has(u.id) ? Colors.textSecondary : '#fff', fontSize: FontSize.xs, fontWeight: '600' }}>
+                            <Text style={{ color: localFollowing.has(u.id) ? C.textSecondary : '#fff', fontSize: FontSize.xs, fontWeight: '600' }}>
                                 {localFollowing.has(u.id) ? 'Following' : 'Follow'}
                             </Text>
                         </TouchableOpacity>
@@ -193,7 +193,7 @@ export default function ExploreScreen() {
             )}
             ListEmptyComponent={() => (
                 <View style={styles.emptyState}>
-                    <Ionicons name="compass-outline" size={64} color={Colors.textTertiary} />
+                    <Ionicons name="compass-outline" size={64} color={C.textTertiary} />
                     <Text style={styles.emptyTitle}>Explore</Text>
                     <Text style={styles.emptySubtitle}>Posts from the community will appear here</Text>
                 </View>
@@ -327,7 +327,7 @@ export default function ExploreScreen() {
                         setResults([]);
                         setShowHistory(false);
                     }}>
-                        <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+                        <Ionicons name="close-circle" size={18} color={C.textTertiary} />
                     </TouchableOpacity>
                 )}
             </View>

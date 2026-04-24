@@ -618,7 +618,7 @@ export default function ChatScreen() {
                                 <Text style={styles.actionBtnText}>Select</Text>
                             </TouchableOpacity>
                             {msg.text ? (
-                                <TouchableOpacity style={styles.actionBtn} onPress={async () => { try { await Clipboard.setStringAsync(msg.text); setShowReactions(null); } catch(e) {} }}>
+                                <TouchableOpacity style={styles.actionBtn} onPress={async () => { try { await Clipboard.setStringAsync(msg.text); setShowReactions(null); showToast('Copied to clipboard', 'success'); } catch(e) {} }}>
                                     <Ionicons name="copy-outline" size={18} color={Colors.text} />
                                     <Text style={styles.actionBtnText}>Copy</Text>
                                 </TouchableOpacity>
@@ -771,9 +771,13 @@ export default function ChatScreen() {
                         </Text>
                         {/* Animated recording wave bars */}
                         <View style={styles.voiceWave}>
-                            {[...Array(16)].map((_, i) => (
-                                <View key={i} style={[styles.voiceBar, { height: 4 + Math.random() * 14, backgroundColor: Colors.error, opacity: 0.8 }]} />
-                            ))}
+                            {[...Array(16)].map((_, i) => {
+                                const phase = (recordingDuration * 3 + i * 0.8) % (Math.PI * 2);
+                                const h = 4 + Math.abs(Math.sin(phase + i * 0.6)) * 14;
+                                return (
+                                    <View key={i} style={[styles.voiceBar, { height: h, backgroundColor: '#FF3B30', opacity: 0.6 + Math.abs(Math.sin(phase)) * 0.4 }]} />
+                                );
+                            })}
                         </View>
                     </View>
                     <TouchableOpacity style={styles.sendRecBtn} onPress={stopAndSendRecording}>

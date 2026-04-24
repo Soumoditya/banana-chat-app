@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAppTheme from '../../hooks/useAppTheme';
 import PremiumBadge from '../../components/PremiumBadge';
 import { useToast } from '../../contexts/ToastContext';
+import AnimatedPress from '../../components/AnimatedPress';
 
 const SECTIONS = [
     { key: 'primary', label: 'Primary' },
@@ -223,11 +224,10 @@ export default function ChatsScreen() {
         const lastMsg = chat.lastMessage;
 
         return (
-            <TouchableOpacity
+            <AnimatedPress
                 style={styles.chatItem}
                 onPress={() => router.push(`/chat/${chat.id}`)}
                 onLongPress={() => handleChatLongPress(chat)}
-                activeOpacity={0.6}
             >
                 {avatar ? (
                     <Image source={{ uri: avatar }} style={styles.chatAvatar} />
@@ -264,7 +264,7 @@ export default function ChatsScreen() {
                         </Text>
                     )}
                 </View>
-            </TouchableOpacity>
+            </AnimatedPress>
         );
     };
 

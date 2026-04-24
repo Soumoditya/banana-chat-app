@@ -232,7 +232,7 @@ export default function ProfileScreen() {
                             )}
                             {isAdmin && (
                                 <View style={styles.adminBadge}>
-                                    <Ionicons name="shield-checkmark" size={14} color={Colors.primary} />
+                                    <Ionicons name="shield-checkmark" size={14} color={C.primary} />
                                 </View>
                             )}
                             <View style={styles.cameraIcon}>
@@ -278,7 +278,7 @@ export default function ProfileScreen() {
                                         return (
                                             <Text
                                                 key={i}
-                                                style={{ color: Colors.primary, fontWeight: '600' }}
+                                                style={{ color: C.primary, fontWeight: '600' }}
                                                 onPress={() => router.push(`/user/${username}`)}
                                             >
                                                 {part}
@@ -329,7 +329,7 @@ export default function ProfileScreen() {
                                 <Text style={styles.streakText}>{getStreakEmoji(appStreak)} {appStreak} day streak</Text>
                             </View>
                             <View style={styles.privacyBadge}>
-                                <Ionicons name={userProfile?.isPrivate ? "lock-closed" : "globe-outline"} size={12} color={Colors.textSecondary} />
+                                <Ionicons name={userProfile?.isPrivate ? "lock-closed" : "globe-outline"} size={12} color={C.textSecondary} />
                                 <Text style={styles.privacyText}>{userProfile?.isPrivate ? 'Private' : 'Public'}</Text>
                             </View>
                         </View>
@@ -351,13 +351,13 @@ export default function ProfileScreen() {
                                 } catch (e) {}
                             }}
                         >
-                            <Ionicons name="share-outline" size={18} color={Colors.text} />
+                            <Ionicons name="share-outline" size={18} color={C.text} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.shareProfileBtn, isPremiumActive(userProfile) && { borderColor: '#FFD700' }]}
                             onPress={() => router.push('/premium')}
                         >
-                            <Ionicons name="diamond" size={16} color={isPremiumActive(userProfile) ? '#FFD700' : Colors.text} />
+                            <Ionicons name="diamond" size={16} color={isPremiumActive(userProfile) ? '#FFD700' : C.text} />
                         </TouchableOpacity>
                         {(isPremiumActive(userProfile) || userProfile?.profileCategory === 'creator' || userProfile?.profileCategory === 'business') && (
                             <TouchableOpacity
@@ -417,13 +417,13 @@ export default function ProfileScreen() {
                 {/* Post tabs */}
                 <View style={styles.tabs}>
                     <TouchableOpacity style={[styles.tab, activeTab === 'posts' && styles.tabActive]} onPress={() => setActiveTab('posts')}>
-                        <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name="grid-outline" size={20} color={activeTab === 'posts' ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.tab, activeTab === 'reshares' && styles.tabActive]} onPress={() => setActiveTab('reshares')}>
-                        <Ionicons name="repeat" size={22} color={activeTab === 'reshares' ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name="repeat" size={22} color={activeTab === 'reshares' ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.tab, activeTab === 'saved' && styles.tabActive]} onPress={() => setActiveTab('saved')}>
-                        <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
                 </View>
 
@@ -434,14 +434,14 @@ export default function ProfileScreen() {
                     </View>
                 ) : (
                     <View style={styles.emptyPosts}>
-                        <Ionicons name={activeTab === 'posts' ? "images-outline" : activeTab === 'reshares' ? "repeat" : "bookmark-outline"} size={48} color={Colors.textTertiary} />
+                        <Ionicons name={activeTab === 'posts' ? "images-outline" : activeTab === 'reshares' ? "repeat" : "bookmark-outline"} size={48} color={C.textTertiary} />
                         <Text style={styles.emptyText}>{activeTab === 'posts' ? 'No posts yet' : activeTab === 'reshares' ? 'No reshared posts' : 'No saved posts'}</Text>
                     </View>
                 )}
 
                 {/* Sign Out */}
                 <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-                    <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+                    <Ionicons name="log-out-outline" size={20} color={C.error || Colors.error} />
                     <Text style={styles.signOutText}>Sign Out</Text>
                 </TouchableOpacity>
             </ScrollView>

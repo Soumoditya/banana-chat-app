@@ -111,7 +111,20 @@ const ConfirmModal = ({ confirm, onDismiss, insets }) => {
                     <Text style={styles.confirmTitle}>{confirm.title}</Text>
                     {confirm.message && <Text style={styles.confirmMessage}>{confirm.message}</Text>}
                     <View style={styles.confirmActions}>
-                        <TouchableOpacity style={styles.confirmBtnCancel} onPress={() => dismiss(false)}>
+                        <TouchableOpacity style={styles.confirmBtnCancel} onPress={() => {
+                            if (confirm.onCancel) {
+                                // Custom cancel action — execute it then dismiss
+                                Animated.parallel([
+                                    Animated.timing(scale, { toValue: 0.85, duration: 150, useNativeDriver: true }),
+                                    Animated.timing(opacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+                                ]).start(() => {
+                                    confirm.onCancel();
+                                    onDismiss();
+                                });
+                            } else {
+                                dismiss(false);
+                            }
+                        }}>
                             <Text style={styles.confirmBtnCancelText}>{confirm.cancelText || 'Cancel'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -150,6 +163,7 @@ export const ToastProvider = ({ children }) => {
             confirmText: opts.confirmText,
             cancelText: opts.cancelText,
             icon: opts.icon,
+            onCancel: opts.onCancel || null,
         });
     }, []);
 

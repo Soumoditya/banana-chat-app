@@ -27,7 +27,7 @@ const SOCIAL_PLATFORMS = {
     youtube: { icon: 'logo-youtube', color: '#FF0000', prefix: 'https://youtube.com/@' },
     github: { icon: 'logo-github', color: '#fff', prefix: 'https://github.com/' },
     linkedin: { icon: 'logo-linkedin', color: '#0A66C2', prefix: 'https://linkedin.com/in/' },
-    website: { icon: 'globe-outline', color: Colors.primary, prefix: '' },
+    website: { icon: 'globe-outline', color: '#FFD60A', prefix: '' },
 };
 
 export default function UserProfileScreen() {
@@ -315,7 +315,7 @@ export default function UserProfileScreen() {
                                     return (
                                         <Text
                                             key={i}
-                                            style={{ color: Colors.primary, fontWeight: '600' }}
+                                            style={{ color: C.primary, fontWeight: '600' }}
                                             onPress={() => router.push(`/user/${username}`)}
                                         >
                                             {part}
@@ -333,7 +333,7 @@ export default function UserProfileScreen() {
                             }}
                             activeOpacity={0.6}
                         >
-                            <Ionicons name="copy-outline" size={14} color={Colors.textTertiary} />
+                            <Ionicons name="copy-outline" size={14} color={C.textTertiary || Colors.textTertiary} />
                         </TouchableOpacity>
                     </View>
                 ) : null}
@@ -341,11 +341,26 @@ export default function UserProfileScreen() {
                 {/* Social Links */}
                 {renderSocialLinks()}
 
-                {/* Streak */}
+                {/* Streak — now tappable */}
                 {streak && streak.count > 0 && (
-                    <View style={styles.streakBadge}>
+                    <TouchableOpacity
+                        style={styles.streakBadge}
+                        onPress={() => {
+                            const tips = streak.count >= 30 ? '🏆 Legendary streak!'
+                                : streak.count >= 14 ? '💪 Keep it going!'
+                                : streak.count >= 7 ? '🔥 One week strong!'
+                                : '✨ Keep chatting daily!';
+                            showConfirm(
+                                `${streak.emoji || '🔥'} ${streak.count} Day Streak`,
+                                `You and @${profile.username} have been chatting for ${streak.count} consecutive days!\n\n${tips}\n\nChat every day to keep your streak alive!`,
+                                () => {},
+                                { confirmText: 'Nice! 🍌', icon: 'flame-outline' }
+                            );
+                        }}
+                        activeOpacity={0.7}
+                    >
                         <Text style={styles.streakText}>{streak.emoji} {streak.count} day streak</Text>
-                    </View>
+                    </TouchableOpacity>
                 )}
 
                 {/* Stats — Tappable followers/following */}
@@ -384,11 +399,11 @@ export default function UserProfileScreen() {
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.msgBtn} onPress={handleMessage}>
-                            <Ionicons name="chatbubble-outline" size={18} color={Colors.text} />
+                            <Ionicons name="chatbubble-outline" size={18} color={C.text} />
                         </TouchableOpacity>
                         {!isFriend && (
                             <TouchableOpacity style={styles.msgBtn} onPress={handleAddFriend}>
-                                <Ionicons name="person-add-outline" size={18} color={Colors.text} />
+                                <Ionicons name="person-add-outline" size={18} color={C.text} />
                             </TouchableOpacity>
                         )}
                     </View>

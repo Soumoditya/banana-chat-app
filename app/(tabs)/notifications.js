@@ -123,8 +123,17 @@ function NotificationItem({ item, onPress, onDelete, onFollowBack, currentUserId
     const isFollowType = item.type === 'follow';
     const alreadyFollowing = currentUserProfile?.following?.includes(item.actorId);
 
+    const scale = useRef(new Animated.Value(1)).current;
+
+    const handlePressIn = () => {
+        Animated.spring(scale, { toValue: 0.97, friction: 8, tension: 200, useNativeDriver: true }).start();
+    };
+    const handlePressOut = () => {
+        Animated.spring(scale, { toValue: 1, friction: 5, tension: 150, useNativeDriver: true }).start();
+    };
+
     return (
-        <Animated.View style={{ opacity: itemOpacity, transform: [{ translateX }] }}>
+        <Animated.View style={{ opacity: itemOpacity, transform: [{ translateX }, { scale }] }}>
             <View style={styles.deleteBackground}>
                 <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
                     <Ionicons name="trash" size={22} color="#fff" />
@@ -136,6 +145,9 @@ function NotificationItem({ item, onPress, onDelete, onFollowBack, currentUserId
                 style={[styles.notifItem, !item.read && styles.notifUnread]}
                 onPress={() => onPress(item)}
                 onLongPress={() => onDelete(item.id)}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+                activeOpacity={1}
             >
                 <View style={[styles.notifIconCircle, { backgroundColor: getNotifColor(item.type) + '20' }]}>
                     <Ionicons name={getNotifIcon(item.type)} size={18} color={getNotifColor(item.type)} />
@@ -245,9 +257,8 @@ export default function NotificationsScreen() {
             setNotifications(notifs);
             setSections(groupNotifications(notifs));
 
-            // Only mark read if there are actually unread notifications
-            const hasUnread = notifs.some(n => !n.read);
-            if (hasUnread) markAllNotificationsRead(user.uid);
+            // Only mark as read on pull-to-refresh, not on initial load (Instagram behavior)
+            // markAllNotificationsRead is called in onRefresh() instead
 
             // Foreground push for new notifications
             if (prevNotifCountRef.current > 0 && notifs.length > prevNotifCountRef.current) {
@@ -399,11 +410,11 @@ export default function NotificationsScreen() {
                     />
                 )}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} colors={[C.primary]} />
                 }
                 ListEmptyComponent={() => (
                     <View style={styles.emptyState}>
-                        <Ionicons name="heart-outline" size={64} color={Colors.textTertiary} />
+                        <Ionicons name="heart-outline" size={64} color={C.textTertiary} />
                         <Text style={styles.emptyTitle}>No activity yet</Text>
                         <Text style={styles.emptySubtitle}>When people interact with you, you'll see it here</Text>
                     </View>
