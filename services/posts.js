@@ -290,10 +290,12 @@ export const softDeletePost = async (postId) => {
             ...postData,
             originalId: postId,
             itemType: 'post',
+            // Store as NOT deleted so restoration re-inserts a clean document
+            deleted: false,
             deletedAt: new Date(),
             expiresAt: expiresAt,
-            // For display in recently-deleted UI
-            media: typeof postData.media?.[0] === 'string' ? postData.media[0] : postData.media?.[0]?.uri || null,
+            // Preserve full media array for proper restoration
+            media: postData.media || [],
             content: postData.content || '',
         });
     }
@@ -411,6 +413,9 @@ export const addComment = async (postId, commentData) => {
         mediaUrl: commentData.mediaUrl || null,
         mediaType: commentData.mediaType || null,
         duration: commentData.duration || null,
+        // Persist file attachment metadata for document/file comments
+        fileName: commentData.fileName || null,
+        fileSize: commentData.fileSize || null,
         parentCommentId: commentData.parentCommentId || null,
         upvotes: 0,
         downvotes: 0,
@@ -512,6 +517,40 @@ export const downvoteComment = async (postId, commentId, uid) => {
     }
 
     await updateDoc(commentRef, updates);
+};
+
+// Add emoji reaction to comment (replace-not-stack, same pattern as addPostReaction)
+export const addCommentReaction = async (postId, commentId, uid, emoji) => {
+    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+    const commentDoc = await getDoc(commentRef);
+    if (!commentDoc.exists()) return;
+    const data = commentDoc.data();
+    const updates = {};
+    const prevEmoji = data.reactedBy?.[uid];
+    if (prevEmoji && prevEmoji !== emoji) {
+        updates[`reactions.${prevEmoji}`] = increment(-1);
+    }
+    if (!prevEmoji || prevEmoji !== emoji) {
+        updates[`reactions.${emoji}`] = increment(1);
+    }
+    updates[`reactedBy.${uid}`] = emoji;
+    await updateDoc(commentRef, updates);
+};
+
+// Edit a comment (only text, preserves media)
+export const editComment = async (postId, commentId, newText) => {
+    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+    await updateDoc(commentRef, {
+        text: newText,
+        editedAt: serverTimestamp(),
+    });
+};
+
+// Soft-delete a comment and decrement post comment count
+export const deleteComment = async (postId, commentId) => {
+    const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+    await updateDoc(commentRef, { deleted: true, deletedAt: serverTimestamp() });
+    await updateDoc(doc(db, 'posts', postId), { commentCount: increment(-1) });
 };
 
 // ─── Bookmarks ───

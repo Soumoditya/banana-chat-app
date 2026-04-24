@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Image, RefreshControl, ActivityIndicator, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -13,12 +13,16 @@ import { searchUsers, getPendingPremiumRequests, approvePremiumRequest, rejectPr
 import { getInitials, formatCount } from '../utils/helpers';
 import { PREMIUM_PLANS } from '../utils/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import useAppTheme from '../hooks/useAppTheme';
+import PremiumBadge from '../components/PremiumBadge';
 
 const TABS = [
     { key: 'premium', icon: 'diamond', label: 'Premium' },
     { key: 'users', icon: 'people', label: 'Users' },
+    { key: 'reports', icon: 'flag', label: 'Reports' },
     { key: 'broadcast', icon: 'megaphone', label: 'Broadcast' },
     { key: 'stats', icon: 'stats-chart', label: 'Stats' },
+    { key: 'logs', icon: 'time', label: 'Logs' },
 ];
 
 export default function AdminScreen() {
@@ -36,6 +40,10 @@ export default function AdminScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
     const [actionLoading, setActionLoading] = useState({});
+    const [grantTarget, setGrantTarget] = useState(null); // { userId, username }
+    const { C } = useAppTheme();
+    const [reportedPosts, setReportedPosts] = useState([]);
+    const [activityLogs, setActivityLogs] = useState([]);
 
     useEffect(() => {
         if (!isAdmin) {
@@ -161,19 +169,7 @@ export default function AdminScreen() {
     };
 
     const showGrantPremiumOptions = (userId, username) => {
-        Alert.alert(
-            'Grant Premium to @' + username,
-            'Select plan to grant (30 days):',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: '🔵 Standard ₹99', onPress: () => grantPremium(userId, 'standard') },
-                { text: '🥇 Premium ₹199', onPress: () => grantPremium(userId, 'premium') },
-                { text: '🥇 Premium+ ₹299', onPress: () => grantPremium(userId, 'premium_plus') },
-                { text: '🟣 Elite ₹399', onPress: () => grantPremium(userId, 'elite') },
-                { text: '🍌 Super ₹499', onPress: () => grantPremium(userId, 'super') },
-                { text: '🖤 VIP ₹999', onPress: () => grantPremium(userId, 'vip') },
-            ]
-        );
+        setGrantTarget({ userId, username });
     };
 
     const grantPremium = async (userId, planId) => {
@@ -470,9 +466,124 @@ export default function AdminScreen() {
         </View>
     );
 
+    const renderLogsTab = () => (
+        <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>📋 Activity Logs</Text>
+            </View>
+            <Text style={[styles.sectionDesc, { color: C.textSecondary }]}>Recent admin actions and system events</Text>
+
+            {activityLogs.length === 0 ? (
+                <View style={styles.emptyState}>
+                    <Ionicons name="document-text-outline" size={48} color={C.textTertiary || Colors.textTertiary} />
+                    <Text style={[styles.emptyText, { color: C.textTertiary }]}>No activity logs yet</Text>
+                    <Text style={[styles.emptySubtext, { color: C.textTertiary }]}>Actions will appear here as you moderate</Text>
+                </View>
+            ) : (
+                activityLogs.map((log, idx) => (
+                    <View key={idx} style={[styles.userCard, { backgroundColor: C.surfaceLight }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name={log.icon || 'time-outline'} size={16} color={C.primary} />
+                            <Text style={{ color: C.text, fontWeight: '600', flex: 1 }}>{log.action}</Text>
+                            <Text style={{ color: C.textTertiary, fontSize: 11 }}>{log.time}</Text>
+                        </View>
+                        <Text style={{ color: C.textSecondary, fontSize: 12, marginTop: 4 }}>{log.details}</Text>
+                    </View>
+                ))
+            )}
+
+            {/* Log Categories */}
+            <View style={{ marginTop: Spacing.lg, gap: 8 }}>
+                <Text style={[styles.sectionTitle, { color: C.text, fontSize: FontSize.md }]}>📊 Log Categories</Text>
+                {[
+                    { icon: 'person-add', label: 'User Actions', desc: 'Bans, verifications, profile changes', color: '#3B82F6' },
+                    { icon: 'diamond', label: 'Premium Actions', desc: 'Grants, revocations, plan changes', color: '#A855F7' },
+                    { icon: 'megaphone', label: 'Broadcast History', desc: 'All sent broadcast messages', color: '#F59E0B' },
+                    { icon: 'flag', label: 'Moderation Actions', desc: 'Post removals, warnings issued', color: Colors.error },
+                    { icon: 'key', label: 'Security Events', desc: 'Login attempts, password resets', color: Colors.success },
+                ].map((cat, idx) => (
+                    <TouchableOpacity key={idx} style={[styles.userCard, { backgroundColor: C.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: cat.color + '20', justifyContent: 'center', alignItems: 'center' }}>
+                            <Ionicons name={cat.icon} size={18} color={cat.color} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={{ color: C.text, fontWeight: '600' }}>{cat.label}</Text>
+                            <Text style={{ color: C.textSecondary, fontSize: 12 }}>{cat.desc}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.textTertiary || Colors.textTertiary} />
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </View>
+    );
+
+    const renderReportsTab = () => (
+        <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: C.text }]}>🚩 Reported Content</Text>
+            </View>
+            <Text style={[styles.sectionDesc, { color: C.textSecondary }]}>Review and moderate reported posts, comments, and users</Text>
+
+            {reportedPosts.length === 0 ? (
+                <View style={styles.emptyState}>
+                    <Ionicons name="shield-checkmark" size={48} color={C.textTertiary || Colors.textTertiary} />
+                    <Text style={[styles.emptyText, { color: C.textTertiary }]}>No reported content</Text>
+                    <Text style={[styles.emptySubtext, { color: C.textTertiary }]}>All clear! 🎉</Text>
+                </View>
+            ) : (
+                reportedPosts.map((report, idx) => (
+                    <View key={idx} style={[styles.userCard, { backgroundColor: C.surfaceLight, borderLeftWidth: 3, borderLeftColor: Colors.error }]}>
+                        <Text style={{ color: C.text, fontWeight: '600' }}>{report.reason || 'Reported'}</Text>
+                        <Text style={{ color: C.textSecondary, fontSize: 12 }}>Post ID: {report.postId}</Text>
+                        <View style={[styles.userActionsGrid, { marginTop: 8 }]}>
+                            <TouchableOpacity style={[styles.actionChip, styles.chipDanger]}>
+                                <Ionicons name="trash-outline" size={14} color={Colors.error} />
+                                <Text style={[styles.chipText, { color: Colors.error }]}>Remove</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.actionChip, styles.chipSuccess]}>
+                                <Ionicons name="checkmark-outline" size={14} color={Colors.success} />
+                                <Text style={[styles.chipText, { color: Colors.success }]}>Dismiss</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ))
+            )}
+
+            {/* Quick Actions */}
+            <View style={{ marginTop: Spacing.lg, gap: 8 }}>
+                <Text style={[styles.sectionTitle, { color: C.text, fontSize: FontSize.md }]}>🔧 Moderation Tools</Text>
+                <TouchableOpacity style={[styles.userCard, { backgroundColor: C.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+                    <Ionicons name="eye-off-outline" size={22} color="#F59E0B" />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: C.text, fontWeight: '600' }}>Content Filter Settings</Text>
+                        <Text style={{ color: C.textSecondary, fontSize: 12 }}>Configure auto-moderation rules</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={C.textTertiary || Colors.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.userCard, { backgroundColor: C.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+                    <Ionicons name="analytics-outline" size={22} color="#3B82F6" />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: C.text, fontWeight: '600' }}>Moderation Analytics</Text>
+                        <Text style={{ color: C.textSecondary, fontSize: 12 }}>View moderation action history</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={C.textTertiary || Colors.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.userCard, { backgroundColor: C.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+                    <Ionicons name="warning-outline" size={22} color={Colors.error} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: C.text, fontWeight: '600' }}>Spam Detection</Text>
+                        <Text style={{ color: C.textSecondary, fontSize: 12 }}>Review flagged spam accounts & content</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={C.textTertiary || Colors.textTertiary} />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+
     return (
+    <>
         <ScrollView
-            style={[styles.container, { paddingTop: insets.top }]}
+            style={[styles.container, { paddingTop: insets.top, backgroundColor: C.background }]}
             contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
             refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
@@ -532,9 +643,42 @@ export default function AdminScreen() {
             {/* Tab Content */}
             {activeTab === 'premium' && renderPremiumTab()}
             {activeTab === 'users' && renderUsersTab()}
+            {activeTab === 'reports' && renderReportsTab()}
             {activeTab === 'broadcast' && renderBroadcastTab()}
             {activeTab === 'stats' && renderStatsTab()}
+            {activeTab === 'logs' && renderLogsTab()}
         </ScrollView>
+
+        {/* Plan Picker Modal */}
+        <Modal visible={!!grantTarget} transparent animationType="fade" onRequestClose={() => setGrantTarget(null)}>
+            <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setGrantTarget(null)}>
+                <View style={[styles.planPickerModal, { backgroundColor: C.surface }]}>
+                    <Text style={[styles.planPickerTitle, { color: C.text }]}>
+                        Grant Premium to @{grantTarget?.username}
+                    </Text>
+                    <Text style={{ color: C.textSecondary, fontSize: 13, marginBottom: 12 }}>Select a plan (30 days):</Text>
+                    {Object.entries(PREMIUM_PLANS).map(([planId, plan]) => (
+                        <TouchableOpacity
+                            key={planId}
+                            style={[styles.planPickerCard, { borderColor: plan.badgeColor + '40' }]}
+                            onPress={() => {
+                                const target = grantTarget;
+                                setGrantTarget(null);
+                                grantPremium(target.userId, planId);
+                            }}
+                        >
+                            <View style={[styles.planPickerDot, { backgroundColor: plan.badgeColor }]} />
+                            <Text style={[styles.planPickerName, { color: C.text }]}>{plan.name}</Text>
+                            <Text style={{ color: C.textSecondary, fontSize: 12 }}>₹{plan.price}</Text>
+                        </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity style={styles.planPickerCancel} onPress={() => setGrantTarget(null)}>
+                        <Text style={{ color: Colors.error, fontWeight: '600' }}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
+            </TouchableOpacity>
+        </Modal>
+    </>
     );
 }
 
@@ -699,4 +843,20 @@ const styles = StyleSheet.create({
     },
     statValue: { fontSize: FontSize.xxl, fontWeight: 'bold' },
     statLabel: { color: Colors.textSecondary, fontSize: 11 },
+    // Plan Picker Modal
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
+    planPickerModal: {
+        width: '85%', borderRadius: BorderRadius.xl, padding: Spacing.lg,
+        maxHeight: '80%',
+    },
+    planPickerTitle: { fontSize: FontSize.lg, fontWeight: '700', marginBottom: 4 },
+    planPickerCard: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        paddingVertical: 12, paddingHorizontal: 14,
+        borderWidth: 1.5, borderRadius: BorderRadius.md,
+        marginBottom: 8,
+    },
+    planPickerDot: { width: 12, height: 12, borderRadius: 6 },
+    planPickerName: { flex: 1, fontSize: FontSize.md, fontWeight: '600' },
+    planPickerCancel: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
 });

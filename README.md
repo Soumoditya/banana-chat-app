@@ -17,10 +17,10 @@ banana/
 │   ├── story/[id].js       # Full-screen story viewer
 │   ├── share-post/         # Post sharing flow
 │   ├── user/[id].js        # Public profile viewer
-│   ├── admin.js            # Admin panel (user moderation, broadcasts)
+│   ├── admin.js            # Admin panel (user moderation, broadcasts, reports, logs)
 │   ├── premium.js          # Premium plan selection & purchase
 │   ├── premium-settings.js # Active plan management & customization
-│   ├── settings.js         # App settings & privacy controls
+│   ├── settings.js         # App settings with searchable interface
 │   └── ...                 # Highlights, archives, group creation, etc.
 ├── components/             # Reusable UI components
 │   ├── AppleEmojiPicker.js # iOS-style emoji keyboard
@@ -35,6 +35,8 @@ banana/
 │   ├── AuthContext.js      # Authentication state, user session, admin detection
 │   ├── PremiumContext.js   # Premium subscription state & themed colors
 │   └── ThemeContext.js     # Dark/light theme management
+├── hooks/                  # Custom React hooks
+│   └── useAppTheme.js      # Universal theme hook (colors, fonts, skins)
 ├── services/               # Firebase data layer (Firestore + RTDB)
 │   ├── users.js            # Profiles, follow/block, pin/archive chats
 │   ├── posts.js            # Post CRUD, likes, comments, saves, explore feed
@@ -53,7 +55,12 @@ banana/
 │   ├── theme.js            # Design tokens, color system, spacing scale
 │   ├── constants.js        # App-wide constants, streak emojis, feature flags
 │   ├── helpers.js          # Formatting, validation, text utilities
+│   ├── emoji.js            # Shared Apple emoji CDN utilities
 │   └── premium.js          # 6-tier plan definitions, feature gating, UI skins
+├── website/                # Landing page (open-source)
+│   ├── index.html          # Premium bento-grid layout with app mockups
+│   ├── style.css           # Responsive design with glassmorphism and animations
+│   └── script.js           # Interactive cursor glow, marquee, scroll animations
 ├── assets/                 # Static assets (icons, badges, splash, custom app icons)
 ├── scripts/                # Build & dev tooling
 └── android/                # Native Android project (generated via prebuild)
@@ -77,7 +84,7 @@ npx expo run:android
 ## Tech Stack
 
 | Layer         | Technology                                         |
-|---------------|----------------------------------------------------|
+|---------------|---------------------------------------------------|
 | Framework     | React Native 0.81 + Expo SDK 54                   |
 | Routing       | Expo Router v6 (file-based)                        |
 | Backend       | Firebase (Auth, Firestore, Realtime Database)      |
@@ -95,6 +102,7 @@ npx expo run:android
 - Interactive polls with real-time vote tracking
 - Swipe-to-chat: navigate directly to DMs from the feed
 - Post saving, archiving, and recently-deleted recovery
+- Premium card spacing with rounded corners and skin-aware styling
 
 ### 💬 Messaging
 - Real-time 1:1 DMs and group chats (Firebase RTDB)
@@ -108,7 +116,7 @@ npx expo run:android
 
 ### 📸 Stories & Highlights
 - 24-hour ephemeral stories with background / font customization
-- Story highlights (Spotlight & Memory categories)
+- Story highlights (Spotlight & Memory categories) with resilient cross-collection fetching
 - Highlight editor with cover image and story selection
 - Story archive browser organized by date
 - Soft-delete trash system with recovery window
@@ -120,7 +128,7 @@ npx expo run:android
 - Persistent search history with clear-all
 
 ### 👤 Profiles
-- Editable profile: avatar, bio, display name, social links
+- Editable profile: avatar, bio, display name, username (with uniqueness validation), social links
 - Social link showcase (Instagram, Twitter, YouTube, GitHub, LinkedIn, website)
 - Personal details editor (birthday, gender, location, phone)
 - Followers / following lists with navigation
@@ -146,7 +154,7 @@ npx expo run:android
 - **Elite** (₹399) — Purple tick, glassmorphism UI skin, priority search
 - **Super** (₹499) — Golden banana badge, liquid glass UI, custom app icon upload
 - **VIP** (₹999) — Black banana badge, Aurora Shift UI, obsidian theme, 72h stories
-- 10+ premium themes (Ocean, Emerald, Rose Gold, Neon Pulse, Purple Haze, Amber, Arctic, Aurora, Obsidian)
+- 10+ premium themes with global propagation (all screens re-render instantly)
 - 5 UI skins (Classic, Glass, Liquid Glass, Neon Glow, Aurora Shift)
 - 8+ custom app icons (Spiderman, Ironman, Homelander, Ben 10, Invincible, and more)
 - 8 font styles across tiers
@@ -157,9 +165,13 @@ npx expo run:android
 - User search, ban, unban, and verification management
 - Premium request queue with approve / reject workflow
 - Broadcast messaging to all users
+- Content moderation: Reports queue with remove/dismiss actions
+- Activity logs with categorized event tracking
+- Moderation tools: Content filters, spam detection, analytics
 - App-wide statistics dashboard (total users, premium count, active today)
 
 ### ⚙️ Settings & Privacy
+- **Searchable settings** with keyword-based filtering across all categories
 - Dark / light mode toggle with system-aware default
 - Private profile mode (followers-only content)
 - Blocked users management
@@ -167,13 +179,28 @@ npx expo run:android
 - Password change via Firebase email reset
 - About page & Terms of Service link
 
+### 🌐 Landing Page
+- Premium bento-grid layout with CSS-only app mockups
+- Interactive cursor glow effect and staggered animations
+- Mobile-responsive hamburger navigation
+- Horizontal marquee showcasing app screens
+- Deployed on Vercel
+
 ---
 
 ## Latest Activity
 
-- **docs:** Deep-scanned entire workspace and regenerated README with accurate, verified feature inventory
-- **docs:** Upgraded GEMINI.md to Dynamic Guardian ruleset with docs-gated push protocol
-- **refactor:** Confirmed project structure matches Expo Router conventions
+- **feat:** Production polish pass — 16-item bug fix and UX optimization
+- **fix:** Feed card spacing with margins, rounded corners, and skin-aware styling
+- **fix:** Global theme propagation — all screens now use dynamic `C.xxx` colors
+- **fix:** Stories/highlights persistence with resilient cross-collection fetching
+- **fix:** Profile username editing with uniqueness validation
+- **feat:** Searchable settings with keyword filtering
+- **feat:** Admin panel expansion with Reports and Activity Logs tabs
+- **refactor:** Eliminated circular `require()` dependencies in theme resolution
+- **refactor:** Emoji deduplication — shared `utils/emoji.js` module
+- **fix:** App icon switching safety (cosmetic-only on Android)
+- **fix:** Post feed scroll index recovery
 
 ## License
 

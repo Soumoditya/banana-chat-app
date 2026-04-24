@@ -1,6 +1,7 @@
 import {
     collection,
     doc,
+    getDoc,
     addDoc,
     updateDoc,
     query,
@@ -11,15 +12,29 @@ import {
     serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { sendPushToUser } from './pushNotifications';
+
+// Notification type → push message mapping
+const PUSH_MESSAGES = {
+    like: { title: '❤️ New Like', body: (actor) => `${actor} liked your post` },
+    comment: { title: '💬 New Comment', body: (actor) => `${actor} commented on your post` },
+    follow: { title: '👤 New Follower', body: (actor) => `${actor} started following you` },
+    mention: { title: '📢 Mentioned', body: (actor) => `${actor} mentioned you` },
+    reshare: { title: '🔄 Reshared', body: (actor) => `${actor} reshared your post` },
+    reply: { title: '↩️ Reply', body: (actor) => `${actor} replied to your comment` },
+    share: { title: '📤 Shared', body: (actor) => `${actor} shared your post` },
+    friend_request: { title: '🤝 Friend Request', body: (actor) => `${actor} sent you a friend request` },
+    story_reaction: { title: '⭐ Story Reaction', body: (actor) => `${actor} reacted to your story` },
+    message: { title: '💬 New Message', body: (actor) => `${actor} sent you a message` },
+};
 
 /**
- * Write a notification to the notifications collection.
- * Safe to call from any service — silently swallows errors so
- * a notification failure never breaks the primary action.
+ * Write a notification to the notifications collection AND
+ * deliver a real push notification to the target user's device.
  *
  * @param {string} targetUserId  - The user who receives the notification
  * @param {string} actorId       - The user who triggered it
- * @param {'like'|'comment'|'follow'|'mention'|'reshare'|'reply'|'share'|'friend_request'|'story_reaction'} type
+ * @param {'like'|'comment'|'follow'|'mention'|'reshare'|'reply'|'share'|'friend_request'|'story_reaction'|'message'} type
  * @param {string|null} postId   - The relevant post (optional)
  * @param {string|null} message  - Custom message override (optional)
  * @param {string|null} thumbnailUrl - Post thumbnail preview (optional)
@@ -39,6 +54,21 @@ export const createNotification = async (targetUserId, actorId, type, postId = n
             read: false,
             createdAt: serverTimestamp(),
         });
+
+        // ── Deliver real push notification ──
+        const pushConfig = PUSH_MESSAGES[type] || { title: '🍌 Banana Chat', body: () => 'You have a new notification' };
+        // Get actor display name for push body
+        let actorName = 'Someone';
+        try {
+            const actorDoc = await getDoc(doc(db, 'users', actorId));
+            if (actorDoc.exists()) actorName = actorDoc.data().displayName || actorDoc.data().username || 'Someone';
+        } catch {}
+
+        const pushData = { type };
+        if (postId) pushData.postId = postId;
+        if (type === 'follow') pushData.userId = actorId;
+
+        sendPushToUser(targetUserId, pushConfig.title, pushConfig.body(actorName), pushData).catch(() => {});
     } catch (err) {
         // Notification failure must never crash the calling service
         console.warn('createNotification failed (non-fatal):', err.message);

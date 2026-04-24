@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { addCloseFriend, removeCloseFriend } from '../services/stories';
+import { addCloseFriend, removeCloseFriend } from '../services/users';
 import { getInitials } from '../utils/helpers';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';

@@ -19,6 +19,8 @@ import { subscribeToChats, getOrCreateDMChat, clearChat } from '../../services/c
 import { getUserProfile, searchUsers, pinChat, unpinChat, archiveChat, unarchiveChat } from '../../services/users';
 import { formatTime, getInitials, truncateText, debounce } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import useAppTheme from '../../hooks/useAppTheme';
+import PremiumBadge from '../../components/PremiumBadge';
 
 const SECTIONS = [
     { key: 'primary', label: 'Primary' },
@@ -31,6 +33,7 @@ export default function ChatsScreen() {
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C, skin } = useAppTheme();
     const [chats, setChats] = useState([]);
     const [searchText, setSearchText] = useState('');
     const [chatUsers, setChatUsers] = useState({});
@@ -42,11 +45,20 @@ export default function ChatsScreen() {
         if (!user) return;
 
         const unsubscribe = subscribeToChats(user.uid, async (chatList) => {
-            setChats(chatList);
+            // Filter out chats with blocked users
+            const blockedIds = userProfile?.blockedUsers || [];
+            const filteredChats = chatList.filter(chat => {
+                if (chat.type === 'dm' && blockedIds.length > 0) {
+                    const otherId = chat.participants?.find(p => p !== user.uid);
+                    return !blockedIds.includes(otherId);
+                }
+                return true;
+            });
+            setChats(filteredChats);
 
             // Load user info for DM chats
             const userMap = { ...chatUsers };
-            for (const chat of chatList) {
+            for (const chat of filteredChats) {
                 if (chat.type === 'dm') {
                     const otherId = chat.participants?.find(p => p !== user.uid);
                     if (otherId && !userMap[otherId]) {
@@ -71,8 +83,9 @@ export default function ChatsScreen() {
         setIsSearchingUsers(true);
         try {
             const users = await searchUsers(text);
-            // Filter out self
-            setUserSearchResults(users.filter(u => u.id !== user?.uid));
+            // Filter out self and blocked users
+            const blockedIds = userProfile?.blockedUsers || [];
+            setUserSearchResults(users.filter(u => u.id !== user?.uid && !blockedIds.includes(u.id)));
         } catch (err) {
             console.warn('User search error:', err);
         } finally {
@@ -246,7 +259,13 @@ export default function ChatsScreen() {
                 )}
                 <View style={styles.chatInfo}>
                     <View style={styles.chatTopRow}>
-                        <Text style={styles.chatName} numberOfLines={1}>{name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            <Text style={[styles.chatName, { color: C.text }]} numberOfLines={1}>{name}</Text>
+                            {chat.type === 'dm' && (() => {
+                                const otherId = chat.participants?.find(p => p !== user?.uid);
+                                return <PremiumBadge profile={chatUsers[otherId]} size={12} />;
+                            })()}
+                        </View>
                         {userProfile?.pinnedChats?.includes(chat.id) && (
                             <Ionicons name="pin" size={12} color={Colors.accent} style={{ marginRight: 4 }} />
                         )}
@@ -290,10 +309,10 @@ export default function ChatsScreen() {
     const sectionChats = getSectionChats();
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: C.background }]}>
             {/* Header */}
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Chats</Text>
+            <View style={[styles.header, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
+                <Text style={[styles.headerTitle, { color: C.text }]}>Chats</Text>
                 <TouchableOpacity
                     style={styles.newChatBtn}
                     onPress={() => Alert.alert(

@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Image, ScrollView, Modal, Alert, Share,
-    PanResponder, Animated,
+    PanResponder, Animated, Dimensions, Linking,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
@@ -22,12 +22,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { updateAppStreak } from '../../services/streaks';
 import PremiumBadge from '../../components/PremiumBadge';
 import EmojiText from '../../components/EmojiText';
+import ImageViewer from '../../components/ImageViewer';
 
 const SWIPE_THRESHOLD = 100;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+// Sub-component: renders images at their original aspect ratio with tap-to-zoom
+function FeedImage({ uri, onPress }) {
+    const [height, setHeight] = useState(250);
+    useEffect(() => {
+        if (uri) {
+            Image.getSize(uri, (w, h) => {
+                const ratio = h / w;
+                setHeight(Math.min(Math.max(SCREEN_WIDTH * ratio, 150), 500));
+            }, () => setHeight(250));
+        }
+    }, [uri]);
+    return (
+        <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
+            <Image source={{ uri }} style={{ width: '100%', height }} resizeMode="cover" />
+        </TouchableOpacity>
+    );
+}
 
 export default function HomeScreen() {
     const { user, userProfile, isAdmin, refreshProfile } = useAuth();
     const { themedColors: C, activeFont, skinStyles, downloadMediaEnabled, activeIcon, iosEmojiEnabled } = usePremium();
+    const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [posts, setPosts] = useState([]);
@@ -42,7 +63,17 @@ export default function HomeScreen() {
     const swipeAnim = useRef(new Animated.Value(0)).current;
     const [activeCarouselIndex, setActiveCarouselIndex] = useState({});
     const [showReactionPicker, setShowReactionPicker] = useState(null);
+    const [visiblePostId, setVisiblePostId] = useState(null);
+    const [viewerImage, setViewerImage] = useState(null);
     const POST_REACTIONS = ['❤️', '😂', '😮', '😢', '🔥', '👏', '🍌'];
+
+    // Viewability tracking — only the visible post's video autoplays
+    const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+    const onViewableItemsChanged = useRef(({ viewableItems }) => {
+        if (viewableItems.length > 0) {
+            setVisiblePostId(viewableItems[0]?.item?.id || null);
+        }
+    }).current;
 
     // Swipe left → chats, handles both directions
     const panResponder = useRef(
@@ -68,14 +99,19 @@ export default function HomeScreen() {
     ).current;
 
     const toggleMute = (postId) => {
-        // Start unmuted on first tap, toggle after that
-        setMutedVideos(prev => ({ ...prev, [postId]: prev[postId] === undefined ? false : !prev[postId] }));
+        // Default is muted (true). Single tap toggles.
+        setMutedVideos(prev => ({ ...prev, [postId]: prev[postId] === false ? true : false }));
     };
 
     const loadFeed = useCallback(async () => {
         try {
             const feedPosts = await getFeedPosts(filter, userProfile);
-            setPosts(feedPosts);
+            // Filter out posts from blocked users
+            const blockedIds = userProfile?.blockedUsers || [];
+            const filtered = blockedIds.length > 0
+                ? feedPosts.filter(p => !blockedIds.includes(p.authorId))
+                : feedPosts;
+            setPosts(filtered);
 
             // Load authors in parallel (batched) — collect all unique IDs first
             const allAuthorIds = new Set();
@@ -107,10 +143,17 @@ export default function HomeScreen() {
     const loadStories = useCallback(async () => {
         try {
             const storyData = await getStories(userProfile);
-            setStories(storyData);
-            // Load story authors separately so they always appear even if they haven't posted
-            const storyAuthorMap = {};
+            // Filter out stories from blocked users
+            const blockedIds = userProfile?.blockedUsers || [];
+            const filteredStories = {};
             for (const authorId of Object.keys(storyData)) {
+                if (!blockedIds.includes(authorId)) {
+                    filteredStories[authorId] = storyData[authorId];
+                }
+            }
+            setStories(filteredStories);
+            const storyAuthorMap = {};
+            for (const authorId of Object.keys(filteredStories)) {
                 const profile = await getUserProfile(authorId);
                 if (profile) storyAuthorMap[authorId] = profile;
             }
@@ -314,11 +357,11 @@ export default function HomeScreen() {
         const isSaved = savedPosts.includes(post.id);
 
         return (
-            <View style={[styles.postCard, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
+            <View style={[styles.postCard, { backgroundColor: C.surface, borderBottomColor: C.border, ...skin.cardStyle }]}>
                 {post.isReshare && post.resharerId && (
                     <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 }} onPress={() => router.push(`/user/${authors[post.resharerId]?.username}`)}>
-                        <Ionicons name="repeat" size={14} color={Colors.textSecondary} style={{ marginRight: 6 }} />
-                        <Text style={{ fontSize: 13, color: Colors.textSecondary, fontWeight: '500' }}>
+                        <Ionicons name="repeat" size={14} color={C.textSecondary} style={{ marginRight: 6 }} />
+                        <Text style={{ fontSize: 13, color: C.textSecondary, fontWeight: '500' }}>
                             {authors[post.resharerId]?.displayName || 'User'} reshared
                         </Text>
                     </TouchableOpacity>
@@ -352,7 +395,7 @@ export default function HomeScreen() {
                         </View>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => handlePostMenu(post)}>
-                        <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="ellipsis-horizontal" size={20} color={C.textSecondary} />
                     </TouchableOpacity>
                 </View>
 
@@ -368,7 +411,7 @@ export default function HomeScreen() {
                             }
                             if (part && part.match(/^https?:\/\//)) {
                                 return (
-                                    <Text key={i} style={{ color: '#4A90D9', textDecorationLine: 'underline' }} onPress={() => require('react-native').Linking.openURL(part)}>
+                                    <Text key={i} style={{ color: '#4A90D9', textDecorationLine: 'underline' }} onPress={() => Linking.openURL(part)}>
                                         {part}
                                     </Text>
                                 );
@@ -380,7 +423,9 @@ export default function HomeScreen() {
 
                 {post.media?.length > 0 && (() => {
                     const mediaItems = post.media;
-                    const screenWidth = require('react-native').Dimensions.get('window').width - 16;
+                    const screenWidth = SCREEN_WIDTH - 16;
+                    const isMuted = mutedVideos[post.id] !== false; // default muted
+                    const isVisible = post.id === visiblePostId;
                     return (
                         <View style={styles.mediaContainer}>
                             {mediaItems.length === 1 ? (() => {
@@ -390,14 +435,14 @@ export default function HomeScreen() {
                                 return isVideo ? (
                                     <View>
                                         <Video source={{ uri }} style={styles.postImage} resizeMode={ResizeMode.COVER}
-                                            shouldPlay={true} isMuted={!!mutedVideos[post.id]} isLooping useNativeControls={false} />
+                                            shouldPlay={isVisible} isMuted={isMuted} isLooping useNativeControls={false} />
                                         <TouchableOpacity onPress={() => toggleMute(post.id)}
                                             style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 }}>
-                                            <Ionicons name={mutedVideos[post.id] ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                                            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
                                         </TouchableOpacity>
                                     </View>
                                 ) : (
-                                    <Image source={{ uri }} style={styles.postImage} resizeMode="cover" />
+                                    <FeedImage uri={uri} onPress={() => setViewerImage(uri)} />
                                 );
                             })() : (
                                 <View>
@@ -415,14 +460,16 @@ export default function HomeScreen() {
                                             return isVideo ? (
                                                 <View key={idx} style={{ width: screenWidth }}>
                                                     <Video source={{ uri }} style={[styles.postImage, { width: screenWidth }]} resizeMode={ResizeMode.COVER}
-                                                        shouldPlay={true} isMuted={!!mutedVideos[post.id]} isLooping useNativeControls={false} />
+                                                        shouldPlay={isVisible && (activeCarouselIndex[post.id] || 0) === idx} isMuted={isMuted} isLooping useNativeControls={false} />
                                                     <TouchableOpacity onPress={() => toggleMute(post.id)}
                                                         style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 }}>
-                                                        <Ionicons name={mutedVideos[post.id] ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                                                        <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
                                                     </TouchableOpacity>
                                                 </View>
                                             ) : (
-                                                <Image key={idx} source={{ uri }} style={[styles.postImage, { width: screenWidth }]} resizeMode="cover" />
+                                                <TouchableOpacity key={idx} activeOpacity={0.95} onPress={() => setViewerImage(uri)} style={{ width: screenWidth }}>
+                                                    <Image source={{ uri }} style={[styles.postImage, { width: screenWidth }]} resizeMode="cover" />
+                                                </TouchableOpacity>
                                             );
                                         })}
                                     </ScrollView>
@@ -457,10 +504,13 @@ export default function HomeScreen() {
                                     Alert.alert('Permission needed', 'Allow media library access to save files.');
                                     return;
                                 }
-                                const item = post.media[0];
+                                const idx = activeCarouselIndex[post.id] || 0;
+                                const item = post.media[idx] || post.media[0];
                                 const uri = typeof item === 'string' ? item : item?.uri;
                                 if (!uri) return;
-                                const filename = uri.split('/').pop() || `banana_${Date.now()}.jpg`;
+                                // Sanitize filename: strip query params and ensure extension
+                                let filename = uri.split('/').pop()?.split('?')[0] || `banana_${Date.now()}.jpg`;
+                                if (!/\.[a-z0-9]+$/i.test(filename)) filename += '.jpg';
                                 const localUri = FileSystem.documentDirectory + filename;
                                 const { uri: downloadedUri } = await FileSystem.downloadAsync(uri, localUri);
                                 await MediaLibrary.saveToLibraryAsync(downloadedUri);
@@ -494,41 +544,41 @@ export default function HomeScreen() {
                 <View style={styles.postActions}>
                     <View style={styles.voteContainer}>
                         <TouchableOpacity onPress={() => handleUpvote(post.id)} style={styles.voteBtn}>
-                            <Ionicons name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} size={24} color={isUpvoted ? Colors.upvote : Colors.textSecondary} />
+                            <Ionicons name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} size={24} color={isUpvoted ? C.upvote || Colors.upvote : C.textSecondary} />
                         </TouchableOpacity>
                         <Text style={[styles.voteCount, (post.upvotes - post.downvotes) > 0 && styles.voteCountPositive]}>
                             {formatCount((post.upvotes || 0) - (post.downvotes || 0))}
                         </Text>
                         <TouchableOpacity onPress={() => handleDownvote(post.id)} style={styles.voteBtn}>
-                            <Ionicons name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} size={24} color={isDownvoted ? Colors.downvote : Colors.textSecondary} />
+                            <Ionicons name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} size={24} color={isDownvoted ? C.downvote || Colors.downvote : C.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => router.push(`/post/${post.id}`)}>
-                        <Ionicons name="chatbubble-outline" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="chatbubble-outline" size={20} color={C.textSecondary} />
                         <Text style={styles.actionCount}>{formatCount(post.commentCount || 0)}</Text>
                     </TouchableOpacity>
 
                     {/* Emoji reaction button */}
                     <TouchableOpacity style={styles.actionBtn} onPress={() => setShowReactionPicker(showReactionPicker === post.id ? null : post.id)}>
-                        <Ionicons name="happy-outline" size={20} color={showReactionPicker === post.id ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name="happy-outline" size={20} color={showReactionPicker === post.id ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleReshare(post.id)}>
-                        <Ionicons name={resharedPostIds.has(post.id) ? "checkmark-done-outline" : "repeat-outline"} size={20} color={resharedPostIds.has(post.id) ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name={resharedPostIds.has(post.id) ? "checkmark-done-outline" : "repeat-outline"} size={20} color={resharedPostIds.has(post.id) ? C.primary : C.textSecondary} />
                         {(post.shareCount || 0) > 0 && (
-                            <Text style={[styles.actionCount, resharedPostIds.has(post.id) && { color: Colors.primary }]}>{formatCount(post.shareCount)}</Text>
+                            <Text style={[styles.actionCount, resharedPostIds.has(post.id) && { color: C.primary }]}>{formatCount(post.shareCount)}</Text>
                         )}
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(post.id)}>
-                        <Ionicons name="paper-plane-outline" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="paper-plane-outline" size={20} color={C.textSecondary} />
                     </TouchableOpacity>
 
                     <View style={{ flex: 1 }} />
 
                     <TouchableOpacity onPress={() => handleSave(post.id)}>
-                        <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
                 </View>
 
@@ -537,9 +587,19 @@ export default function HomeScreen() {
                     <View style={styles.reactionPickerRow}>
                         {POST_REACTIONS.map(emoji => (
                             <TouchableOpacity key={emoji} onPress={async () => {
-                                await addPostReaction(post.id, user.uid, emoji);
-                                setPosts(prev => prev.map(p => p.id === post.id ? { ...p, reactions: { ...p.reactions, [emoji]: (p.reactions?.[emoji] || 0) + 1 }, reactedBy: { ...p.reactedBy, [user.uid]: emoji } } : p));
+                                const prevEmoji = post.reactedBy?.[user.uid];
+                                const updatedReactions = { ...(post.reactions || {}) };
+                                // Remove previous reaction if different
+                                if (prevEmoji && prevEmoji !== emoji) {
+                                    updatedReactions[prevEmoji] = Math.max(0, (updatedReactions[prevEmoji] || 1) - 1);
+                                }
+                                // Add new reaction (only if not already this emoji)
+                                if (prevEmoji !== emoji) {
+                                    updatedReactions[emoji] = (updatedReactions[emoji] || 0) + 1;
+                                }
+                                setPosts(prev => prev.map(p => p.id === post.id ? { ...p, reactions: updatedReactions, reactedBy: { ...p.reactedBy, [user.uid]: emoji } } : p));
                                 setShowReactionPicker(null);
+                                await addPostReaction(post.id, user.uid, emoji);
                             }} style={styles.reactionEmojiBtn}>
                                 <Text style={{ fontSize: 22 }}>{emoji}</Text>
                             </TouchableOpacity>
@@ -594,14 +654,14 @@ export default function HomeScreen() {
                 <View style={styles.headerRight}>
                     {isAdmin && (
                         <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/admin')}>
-                            <Ionicons name="shield" size={22} color={Colors.primary} />
+                            <Ionicons name="shield" size={22} color={C.primary} />
                         </TouchableOpacity>
                     )}
                     <TouchableOpacity style={styles.headerBtn} onPress={() => setShowFilterModal(true)}>
-                        <Ionicons name="funnel-outline" size={20} color={Colors.text} />
+                        <Ionicons name="funnel-outline" size={20} color={C.text} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/(tabs)/chats')}>
-                        <Ionicons name="paper-plane-outline" size={22} color={Colors.text} />
+                        <Ionicons name="paper-plane-outline" size={22} color={C.text} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -611,7 +671,7 @@ export default function HomeScreen() {
                 <View style={styles.activeFilter}>
                     <Text style={styles.activeFilterText}>Showing: {filterLabels[filter]}</Text>
                     <TouchableOpacity onPress={() => setFilter('all')}>
-                        <Ionicons name="close-circle" size={18} color={Colors.primary} />
+                        <Ionicons name="close-circle" size={18} color={C.primary} />
                     </TouchableOpacity>
                 </View>
             )}
@@ -626,8 +686,10 @@ export default function HomeScreen() {
                     renderItem={renderPost}
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.listContent}
+                    viewabilityConfig={viewabilityConfig}
+                    onViewableItemsChanged={onViewableItemsChanged}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} colors={[C.primary]} />
                     }
                     ListHeaderComponent={() => (
                         <ScrollView
@@ -676,6 +738,9 @@ export default function HomeScreen() {
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+            {/* Image viewer modal */}
+            <ImageViewer visible={!!viewerImage} imageUrl={viewerImage} onClose={() => setViewerImage(null)} />
         </Animated.View>
     );
 }
@@ -725,6 +790,8 @@ const styles = StyleSheet.create({
     postCard: {
         backgroundColor: Colors.surface, borderBottomWidth: 0.5, borderBottomColor: Colors.border,
         paddingHorizontal: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm,
+        marginBottom: 10, marginHorizontal: 6, borderRadius: BorderRadius.lg,
+        borderWidth: 0.5, borderColor: Colors.border,
     },
     postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
     postAuthor: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },

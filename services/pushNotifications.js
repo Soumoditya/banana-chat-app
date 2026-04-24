@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 // Configure how notifications appear when app is in foreground
@@ -101,3 +101,50 @@ export const setupNotificationResponseListener = (router) => {
     });
     return subscription;
 };
+
+/**
+ * Send a push notification to a specific user via Expo Push API.
+ * Reads their expoPushToken from Firestore and delivers instantly.
+ * Works even when the target user's app is closed.
+ */
+export const sendPushToUser = async (targetUserId, title, body, data = {}) => {
+    if (!targetUserId) return;
+    try {
+        const userDoc = await getDoc(doc(db, 'users', targetUserId));
+        if (!userDoc.exists()) return;
+
+        const token = userDoc.data().expoPushToken;
+        if (!token) return;
+
+        const message = {
+            to: token,
+            sound: 'default',
+            title,
+            body,
+            data,
+            priority: 'high',
+            channelId: 'default',
+        };
+
+        await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(message),
+        });
+    } catch (err) {
+        console.warn('sendPushToUser failed (non-fatal):', err.message);
+    }
+};
+
+/**
+ * Send push notifications to multiple users at once (batch).
+ */
+export const sendPushToUsers = async (userIds, title, body, data = {}) => {
+    if (!userIds?.length) return;
+    const promises = userIds.map(uid => sendPushToUser(uid, title, body, data));
+    await Promise.allSettled(promises);
+};
+

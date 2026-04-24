@@ -6,8 +6,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Image, TextInput, StyleSheet, Dimensions } from 'react-native';
 import { Colors } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-
-const APPLE_EMOJI_CDN = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@15.1.2/img/apple/64';
+import { APPLE_EMOJI_CDN, emojiToCodePoint } from '../utils/emoji';
 
 // Common emoji organized by category (using unicode code points)
 const EMOJI_CATEGORIES = {

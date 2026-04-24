@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { getUserByUsername, searchUsers } from '../../services/users';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -56,7 +57,6 @@ export default function LoginScreen() {
         // If it's a username (no @), look up the email
         if (!input.includes('@')) {
             try {
-                const { getUserByUsername, searchUsers } = require('../../services/users');
                 // Try exact username match
                 let userDoc = await getUserByUsername(input);
                 if (!userDoc) {

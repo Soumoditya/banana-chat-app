@@ -1,6 +1,6 @@
 export const ADMIN_EMAIL = 'soumodityapramanik@gmail.com';
 export const ADMIN_USERNAME = 'X';
-export const ADMIN_PASSWORD = '79802%';
+// ADMIN_PASSWORD removed — never store passwords in client-side code
 
 // ─── Admin Users (usernames with full admin power) ───
 export const ADMIN_USERNAMES = ['xdd', 'inactiveritesh'];

@@ -157,6 +157,88 @@ export const updateUserProfile = async (uid, data) => {
     });
 };
 
+// ─── Username Change (Instagram-like) ───
+export const changeUsername = async (uid, newUsername) => {
+    if (!newUsername || newUsername.length < 3) {
+        throw new Error('Username must be at least 3 characters');
+    }
+    if (!/^[a-zA-Z0-9._]+$/.test(newUsername)) {
+        throw new Error('Username can only contain letters, numbers, dots, and underscores');
+    }
+    // Check uniqueness
+    const lowerNew = newUsername.toLowerCase();
+    const q1 = query(collection(db, 'users'), where('usernameLower', '==', lowerNew), limit(1));
+    const snap = await getDocs(q1);
+    if (!snap.empty && snap.docs[0].id !== uid) {
+        throw new Error('Username is already taken');
+    }
+    // Fallback scan for legacy users
+    const allSnap = await getDocs(collection(db, 'users'));
+    const taken = allSnap.docs.some(d => {
+        if (d.id === uid) return false;
+        const data = d.data();
+        return (data.usernameLower || data.username || '').toLowerCase() === lowerNew;
+    });
+    if (taken) throw new Error('Username is already taken');
+
+    await updateDoc(doc(db, 'users', uid), {
+        username: newUsername,
+        usernameLower: lowerNew,
+        lastActive: serverTimestamp(),
+    });
+};
+
+// ─── Profile View Tracking ───
+export const incrementProfileView = async (targetUid) => {
+    try {
+        await updateDoc(doc(db, 'users', targetUid), {
+            profileViews: increment(1),
+        });
+    } catch (err) {
+        console.warn('incrementProfileView failed:', err.message);
+    }
+};
+
+// ─── Profile Analytics ───
+export const getProfileAnalytics = async (uid) => {
+    try {
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        const profile = userDoc.exists() ? userDoc.data() : {};
+
+        // Get user's posts for engagement stats
+        const postsQ = query(collection(db, 'posts'), where('authorId', '==', uid), orderBy('createdAt', 'desc'), limit(50));
+        let postsSnap;
+        try { postsSnap = await getDocs(postsQ); } catch { postsSnap = { docs: [] }; }
+
+        let totalLikes = 0;
+        let totalComments = 0;
+        const topPosts = [];
+
+        postsSnap.docs.forEach(d => {
+            const p = { id: d.id, ...d.data() };
+            totalLikes += (p.upvotes || 0);
+            totalComments += (p.commentCount || 0);
+            topPosts.push(p);
+        });
+
+        // Sort by engagement
+        topPosts.sort((a, b) => ((b.upvotes || 0) + (b.commentCount || 0)) - ((a.upvotes || 0) + (a.commentCount || 0)));
+
+        return {
+            profileViews: profile.profileViews || 0,
+            followers: profile.followers?.length || 0,
+            following: profile.following?.length || 0,
+            totalPosts: postsSnap.docs.length,
+            totalLikes,
+            totalComments,
+            topPosts: topPosts.slice(0, 5),
+        };
+    } catch (err) {
+        console.warn('getProfileAnalytics failed:', err.message);
+        return { profileViews: 0, followers: 0, following: 0, totalPosts: 0, totalLikes: 0, totalComments: 0, topPosts: [] };
+    }
+};
+
 // ─── Social Graph ───
 export const followUser = async (currentUid, targetUid) => {
     await updateDoc(doc(db, 'users', currentUid), {
@@ -214,12 +296,26 @@ export const removeCloseFriend = async (currentUid, targetUid) => {
 
 // Blocking also severs friend/follow links to prevent stale social data.
 export const blockUser = async (currentUid, targetUid) => {
+    // Remove target from blocker's social lists
     await updateDoc(doc(db, 'users', currentUid), {
         blockedUsers: arrayUnion(targetUid),
         friends: arrayRemove(targetUid),
         closeFriends: arrayRemove(targetUid),
         following: arrayRemove(targetUid),
+        followers: arrayRemove(targetUid),
     });
+    // Also remove blocker from target's social lists to prevent ghost entries
+    try {
+        await updateDoc(doc(db, 'users', targetUid), {
+            friends: arrayRemove(currentUid),
+            closeFriends: arrayRemove(currentUid),
+            following: arrayRemove(currentUid),
+            followers: arrayRemove(currentUid),
+        });
+    } catch (err) {
+        // Target cleanup is best-effort — don't block the main action
+        console.warn('blockUser: target cleanup failed (non-fatal):', err.message);
+    }
 };
 
 export const unblockUser = async (currentUid, targetUid) => {

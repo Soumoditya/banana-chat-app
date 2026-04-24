@@ -175,6 +175,10 @@ export default function RootLayout() {
                                     <Stack.Screen name="archived-posts" options={{ animation: 'slide_from_right' }} />
                                     <Stack.Screen name="share-post/[id]" options={{ animation: 'slide_from_right' }} />
                                     <Stack.Screen name="call/[id]" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
+                                    <Stack.Screen name="faq" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="account-type" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="profile-analytics" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="premium-settings" options={{ animation: 'slide_from_right' }} />
                                 </Stack>
                             </PremiumProvider>
                         </AuthProvider>

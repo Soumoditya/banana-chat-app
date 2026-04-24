@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { Colors } from '../../utils/theme';
+import useAppTheme from '../../hooks/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { subscribeToUnreadChats } from '../../services/chat';
 
-// Badge dot shown on the notification tab
-function NotifBadge({ count, color, size, focused }) {
+// Badge dot shown on notification & chat tabs
+function TabBadge({ iconFocused, iconOutline, count, color, size, focused }) {
     return (
         <View style={{ width: size + 8, height: size + 8, justifyContent: 'center', alignItems: 'center' }}>
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={size} color={color} />
+            <Ionicons name={focused ? iconFocused : iconOutline} size={size} color={color} />
             {count > 0 && (
                 <View style={styles.badge}>
                     <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
@@ -25,26 +27,29 @@ function NotifBadge({ count, color, size, focused }) {
 export default function TabsLayout() {
     const insets = useSafeAreaInsets();
     const { user } = useAuth();
-    const [unreadCount, setUnreadCount] = useState(0);
+    const { C } = useAppTheme();
+    const [unreadNotifs, setUnreadNotifs] = useState(0);
+    const [unreadChats, setUnreadChats] = useState(0);
 
+    // Live unread notification count
     useEffect(() => {
         if (!user?.uid) return;
-
-        // Live unread count from Firestore
         const q = query(
             collection(db, 'notifications'),
             where('targetUserId', '==', user.uid),
             where('read', '==', false),
             limit(100)
         );
-
         const unsub = onSnapshot(q, (snapshot) => {
-            setUnreadCount(snapshot.size);
-        }, () => {
-            // Collection may not exist yet — silent fail
-            setUnreadCount(0);
-        });
+            setUnreadNotifs(snapshot.size);
+        }, () => setUnreadNotifs(0));
+        return () => unsub();
+    }, [user?.uid]);
 
+    // Live unread chat count
+    useEffect(() => {
+        if (!user?.uid) return;
+        const unsub = subscribeToUnreadChats(user.uid, setUnreadChats);
         return () => unsub();
     }, [user?.uid]);
 
@@ -53,9 +58,9 @@ export default function TabsLayout() {
             screenOptions={{
                 headerShown: false,
                 lazy: false,
-                tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8), height: 56 + Math.max(insets.bottom, 8) }],
-                tabBarActiveTintColor: Colors.text,
-                tabBarInactiveTintColor: Colors.textTertiary,
+                tabBarStyle: [styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8), height: 56 + Math.max(insets.bottom, 8), backgroundColor: C.background, borderTopColor: C.border }],
+                tabBarActiveTintColor: C.text,
+                tabBarInactiveTintColor: C.textTertiary,
                 tabBarShowLabel: false,
                 animation: 'shift',
             }}
@@ -83,7 +88,23 @@ export default function TabsLayout() {
                 options={{
                     title: '',
                     tabBarIcon: ({ color, focused }) => (
-                        <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={30} color={Colors.primary} />
+                        <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={30} color={C.primary} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="chats"
+                options={{
+                    title: 'Chats',
+                    tabBarIcon: ({ color, focused }) => (
+                        <TabBadge
+                            iconFocused="chatbubbles"
+                            iconOutline="chatbubbles-outline"
+                            count={focused ? 0 : unreadChats}
+                            color={color}
+                            size={24}
+                            focused={focused}
+                        />
                     ),
                 }}
             />
@@ -92,8 +113,10 @@ export default function TabsLayout() {
                 options={{
                     title: 'Activity',
                     tabBarIcon: ({ color, focused }) => (
-                        <NotifBadge
-                            count={focused ? 0 : unreadCount}
+                        <TabBadge
+                            iconFocused="heart"
+                            iconOutline="heart-outline"
+                            count={focused ? 0 : unreadNotifs}
                             color={color}
                             size={24}
                             focused={focused}
@@ -108,13 +131,6 @@ export default function TabsLayout() {
                     tabBarIcon: ({ color, focused }) => (
                         <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
                     ),
-                }}
-            />
-            {/* Hide chats from tabs — accessed via DM icon on home */}
-            <Tabs.Screen
-                name="chats"
-                options={{
-                    href: null,
                 }}
             />
         </Tabs>
@@ -132,7 +148,7 @@ const styles = StyleSheet.create({
     badge: {
         position: 'absolute',
         top: 0,
-        right: 0,
+        right: -2,
         backgroundColor: Colors.error || '#FF3D71',
         borderRadius: 8,
         minWidth: 16,

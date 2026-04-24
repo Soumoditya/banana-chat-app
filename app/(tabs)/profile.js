@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getUserPosts, getSavedPosts } from '../../services/posts';
 import { getHighlights, getStoriesByIds } from '../../services/stories';
 import { getResharesByUser } from '../../services/reshares';
-import { updateUserProfile } from '../../services/users';
+import { updateUserProfile, changeUsername } from '../../services/users';
 import { getAppStreak } from '../../services/streaks';
 import { getInitials, formatCount } from '../../utils/helpers';
 import { getStreakEmoji } from '../../utils/constants';
@@ -36,7 +36,8 @@ const SOCIAL_PLATFORMS = {
 
 export default function ProfileScreen() {
     const { user, userProfile, signOut, isAdmin, refreshProfile } = useAuth();
-    const { themedColors: C, activeFont } = usePremium();
+    const { themedColors: C, activeFont, skinStyles } = usePremium();
+    const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [posts, setPosts] = useState([]);
@@ -138,6 +139,10 @@ export default function ProfileScreen() {
 
     const handleSaveProfile = async () => {
         try {
+            // Handle username change separately with uniqueness check
+            if (editForm.username && editForm.username !== userProfile?.username) {
+                await changeUsername(user.uid, editForm.username);
+            }
             await updateUserProfile(user.uid, {
                 displayName: editForm.displayName,
                 bio: editForm.bio,
@@ -195,25 +200,25 @@ export default function ProfileScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={[styles.container, { paddingTop: insets.top, backgroundColor: C.background }]}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>@{userProfile?.username || 'Profile'}</Text>
+                <View style={[styles.header, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
+                    <Text style={[styles.headerTitle, { color: C.text }]}>@{userProfile?.username || 'Profile'}</Text>
                     <View style={styles.headerRight}>
                         {isAdmin && (
                             <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/admin')}>
-                                <Ionicons name="shield" size={20} color={Colors.primary} />
+                                <Ionicons name="shield" size={20} color={C.primary} />
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/settings')}>
-                            <Ionicons name="menu-outline" size={22} color={Colors.text} />
+                            <Ionicons name="menu-outline" size={22} color={C.text} />
                         </TouchableOpacity>
                     </View>
                 </View>
 
                 {/* Profile Card */}
-                <View style={styles.profileCard}>
+                <View style={[styles.profileCard, { backgroundColor: C.surface, ...skin.cardStyle }]}>
                     <View style={styles.profileTopRow}>
                         {/* Avatar */}
                         <TouchableOpacity style={styles.avatarContainer} onPress={handleChangeAvatar}>
@@ -260,6 +265,12 @@ export default function ProfileScreen() {
                             <PremiumBadge profile={userProfile} size={18} />
                         </View>
                         {isPremiumActive(userProfile) && <PremiumFlair profile={userProfile} style={{ alignSelf: 'flex-start', marginTop: 4 }} />}
+                        {userProfile?.showCategory && userProfile?.profileCategory && userProfile.profileCategory !== 'personal' && (
+                            <Text style={{ color: C.primary, fontSize: 13, fontWeight: '500', marginTop: 3 }}>
+                                {userProfile.profileCategory === 'creator' ? '🎨' : '💼'} {userProfile.profileCategory.charAt(0).toUpperCase() + userProfile.profileCategory.slice(1)}
+                                {userProfile.occupation ? ` • ${userProfile.occupation}` : ''}
+                            </Text>
+                        )}
                         {userProfile?.bio ? (
                             <Text style={styles.bio}>
                                 {userProfile.bio.split(/(@\w+)/g).map((part, i) => {
@@ -349,6 +360,14 @@ export default function ProfileScreen() {
                         >
                             <Ionicons name="diamond" size={16} color={isPremiumActive(userProfile) ? '#FFD700' : Colors.text} />
                         </TouchableOpacity>
+                        {(isPremiumActive(userProfile) || userProfile?.profileCategory === 'creator' || userProfile?.profileCategory === 'business') && (
+                            <TouchableOpacity
+                                style={[styles.shareProfileBtn, { borderColor: '#A855F7' }]}
+                                onPress={() => router.push('/profile-analytics')}
+                            >
+                                <Ionicons name="bar-chart-outline" size={16} color="#A855F7" />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
 
@@ -368,7 +387,6 @@ export default function ProfileScreen() {
                                 router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`);
                             }}
                             onLongPress={() => {
-                                const { Alert } = require('react-native');
                                 Alert.alert(h.name || 'Highlight', null, [
                                     { text: 'View', onPress: () => router.push(`/highlight-viewer?highlightId=${h.id}&storyIds=${encodeURIComponent(JSON.stringify(h.storyIds || []))}&authorId=${user.uid}&highlightName=${encodeURIComponent(h.name || 'Highlight')}`) },
                                     { text: 'Edit', onPress: () => router.push(`/highlight-editor?editId=${h.id}`) },
@@ -474,11 +492,14 @@ export default function ProfileScreen() {
                                 <View style={styles.editField}>
                                     <Text style={styles.editLabel}>Username</Text>
                                     <TextInput
-                                        style={[styles.editInput, styles.editInputDisabled]}
+                                        style={styles.editInput}
                                         value={editForm.username}
-                                        editable={false}
+                                        onChangeText={(t) => setEditForm({ ...editForm, username: t.toLowerCase().replace(/[^a-z0-9._]/g, '') })}
+                                        editable={true}
+                                        autoCapitalize="none"
                                         placeholderTextColor={Colors.textTertiary}
                                     />
+                                    <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 2 }}>Letters, numbers, dots, and underscores only</Text>
                                 </View>
                                 <View style={styles.editField}>
                                     <Text style={styles.editLabel}>Bio</Text>

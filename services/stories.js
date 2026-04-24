@@ -13,7 +13,6 @@ import {
     updateDoc,
     arrayUnion,
     arrayRemove,
-    Timestamp,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { generateId } from '../utils/helpers';
@@ -30,6 +29,9 @@ export const createStory = async (storyData) => {
         type: storyData.type || 'public', // public, friends, closeFriends
         hiddenFrom: storyData.hiddenFrom || [], // UIDs who can't see this
         viewers: [],
+        // Preserve text-only story styling (bgColor & fontStyle)
+        bgColor: storyData.bgColor || null,
+        fontStyle: storyData.fontStyle || null,
         expiresAt: new Date(Date.now() + MAX_STORY_DURATION),
         createdAt: serverTimestamp(),
     };
@@ -256,8 +258,8 @@ export const getRecentlyDeleted = async (uid) => {
 
 // Restore from trash
 export const restoreFromTrash = async (itemId) => {
-    const ref = doc(db, 'recently_deleted', itemId);
-    const snap = await getDoc(ref);
+    const trashRef = doc(db, 'recently_deleted', itemId);
+    const snap = await getDoc(trashRef);
     if (!snap.exists()) return;
 
     const data = snap.data();
@@ -266,10 +268,15 @@ export const restoreFromTrash = async (itemId) => {
     if (itemType === 'story') {
         await setDoc(doc(db, 'stories_archive', originalId), original);
     } else if (itemType === 'post') {
-        await setDoc(doc(db, 'posts', originalId), original);
+        // Explicitly clear deletion flags so the post reappears in feeds
+        await setDoc(doc(db, 'posts', originalId), {
+            ...original,
+            deleted: false,
+            deletedAt: null,
+        });
     }
 
-    await deleteDoc(ref);
+    await deleteDoc(trashRef);
 };
 
 // Permanently delete
@@ -343,27 +350,25 @@ export const deleteHighlight = async (highlightId) => {
 };
 
 // Get stories by IDs (for viewing highlight content)
+// Resilient: each fetch is individually wrapped so one failure doesn't break the highlight
 export const getStoriesByIds = async (storyIds) => {
+    if (!storyIds?.length) return [];
     const stories = [];
     for (const id of storyIds) {
-        // Check archive first, then active stories
-        let snap = await getDoc(doc(db, 'stories_archive', id));
-        if (!snap.exists()) snap = await getDoc(doc(db, 'stories', id));
-        if (snap.exists()) stories.push({ id: snap.id, ...snap.data() });
+        try {
+            // Check archive first (most highlight stories will be expired → archived)
+            let snap = await getDoc(doc(db, 'stories_archive', id));
+            // Fallback to active stories
+            if (!snap.exists()) snap = await getDoc(doc(db, 'stories', id));
+            // Last resort: check recently_deleted (user may have soft-deleted)
+            if (!snap.exists()) snap = await getDoc(doc(db, 'recently_deleted', id));
+            if (snap.exists()) stories.push({ id: snap.id, ...snap.data() });
+        } catch (err) {
+            console.warn(`getStoriesByIds: failed to fetch story ${id}:`, err.message);
+            // Continue loading remaining stories — don't break the highlight
+        }
     }
     return stories;
 };
 
-// ─── CLOSE FRIENDS ───────────────────────────────────
-
-export const addCloseFriend = async (uid, friendId) => {
-    await updateDoc(doc(db, 'users', uid), {
-        closeFriends: arrayUnion(friendId),
-    });
-};
-
-export const removeCloseFriend = async (uid, friendId) => {
-    await updateDoc(doc(db, 'users', uid), {
-        closeFriends: arrayRemove(friendId),
-    });
-};
+// NOTE: addCloseFriend / removeCloseFriend are in services/users.js — do not duplicate here.

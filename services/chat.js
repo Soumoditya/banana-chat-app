@@ -29,6 +29,7 @@ import {
 } from 'firebase/firestore';
 import { rtdb, db } from '../config/firebase';
 import { BROADCAST_CHAT_ID } from '../utils/constants';
+import { sendPushToUser } from './pushNotifications';
 
 // Create or get DM chat
 export const getOrCreateDMChat = async (currentUid, otherUid) => {
@@ -154,6 +155,37 @@ export const sendMessage = async (chatId, messageData) => {
                 timestamp: Date.now(),
             },
         });
+
+        // ── Push notification to all other participants ──
+        try {
+            const chatDoc = await getDoc(doc(db, 'chats', chatId));
+            if (chatDoc.exists()) {
+                const chatData = chatDoc.data();
+                const recipients = (chatData.participants || []).filter(uid => uid !== messageData.senderId);
+                
+                // Get sender display name
+                let senderName = 'Someone';
+                try {
+                    const senderDoc = await getDoc(doc(db, 'users', messageData.senderId));
+                    if (senderDoc.exists()) senderName = senderDoc.data().displayName || senderDoc.data().username || 'Someone';
+                } catch {}
+
+                const title = chatData.groupName ? `${senderName} in ${chatData.groupName}` : senderName;
+                const body = messageData.type === 'text' ? (messageData.text || 'Sent a message')
+                    : messageData.type === 'voice' ? '🎤 Voice message'
+                    : messageData.type === 'image' ? '📷 Photo'
+                    : messageData.type === 'video' ? '🎬 Video'
+                    : messageData.type === 'document' ? '📄 Document'
+                    : 'Sent a message';
+
+                for (const recipientId of recipients) {
+                    sendPushToUser(recipientId, title, body, { chatId, type: 'message' }).catch(() => {});
+                }
+            }
+        } catch (pushErr) {
+            // Push failure must never break message sending
+            console.warn('Chat push notification failed (non-fatal):', pushErr.message);
+        }
     }
 
     return message;
@@ -308,4 +340,41 @@ export const subscribeToTyping = (chatId, callback) => {
         callback(typing);
     });
     return () => off(typingRef);
+};
+
+// ─── Unread Chat Count ───
+/**
+ * Subscribe to real-time unread chat count for a user.
+ * Checks all chats the user participates in and counts ones with unread messages.
+ *
+ * TODO: The readBy map lives in RTDB on each message, but lastMessage on the
+ * Firestore chat doc doesn't include readBy. This check will always show
+ * unread for messages from other users. A proper fix would track
+ * lastReadTimestamp per-user on the chat doc.
+ */
+export const subscribeToUnreadChats = (uid, callback) => {
+    if (!uid) { callback(0); return () => {}; }
+
+    const chatsRef = collection(db, 'chats');
+    const q = query(chatsRef, where('participants', 'array-contains', uid));
+
+    const unsub = onSnapshot(q, async (snapshot) => {
+        let count = 0;
+        for (const chatDoc of snapshot.docs) {
+            const data = chatDoc.data();
+            const lastMsg = data.lastMessage;
+            if (!lastMsg) continue;
+            // If last message was sent by someone else and hasn't been read by current user
+            if (lastMsg.senderId && lastMsg.senderId !== uid) {
+                const readBy = lastMsg.readBy || {};
+                if (!readBy[uid]) count++;
+            }
+        }
+        callback(count);
+    }, (err) => {
+        console.warn('subscribeToUnreadChats error:', err.message);
+        callback(0);
+    });
+
+    return unsub;
 };

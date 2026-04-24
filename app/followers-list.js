@@ -7,12 +7,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { getFollowers, getFollowing, getUserProfile } from '../services/users';
 import { getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import useAppTheme from '../hooks/useAppTheme';
+import PremiumBadge from '../components/PremiumBadge';
 
 export default function FollowersListScreen() {
     const { userId, tab } = useLocalSearchParams();
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C, skin } = useAppTheme();
     const [activeTab, setActiveTab] = useState(tab || 'followers');
     const [followers, setFollowers] = useState([]);
     const [following, setFollowing] = useState([]);
@@ -42,12 +45,12 @@ export default function FollowersListScreen() {
     const data = activeTab === 'followers' ? followers : following;
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
+        <View style={[styles.container, { paddingTop: insets.top, backgroundColor: C.background }]}>
+            <View style={[styles.header, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                    <Ionicons name="arrow-back" size={24} color={C.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{profile?.username ? `@${profile.username}` : 'User'}</Text>
+                <Text style={[styles.headerTitle, { color: C.text }]}>{profile?.username ? `@${profile.username}` : 'User'}</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -95,7 +98,10 @@ export default function FollowersListScreen() {
                                 </View>
                             )}
                             <View style={styles.userInfo}>
-                                <Text style={styles.userName}>{item.displayName}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                                    <Text style={[styles.userName, { color: C.text }]}>{item.displayName}</Text>
+                                    <PremiumBadge profile={item} size={13} />
+                                </View>
                                 <Text style={styles.userHandle}>@{item.username}</Text>
                             </View>
                         </TouchableOpacity>

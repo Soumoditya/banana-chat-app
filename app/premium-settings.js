@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Dimensions, Image,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Dimensions, Image, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +16,7 @@ import { setAppIcon } from 'expo-dynamic-app-icon';
 import { updateUserProfile } from '../services/users';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
@@ -89,13 +90,17 @@ export default function PremiumSettingsScreen() {
         }
         setSelectedIcon(iconId);
         savePreference('appIcon', iconId);
-        // Change actual device launcher icon
+        // Change actual device launcher icon (iOS only — Android requires native rebuild)
         try {
-            if (iconId === 'default') {
-                setAppIcon(null); // Reset to default icon
-            } else {
-                setAppIcon(iconId); // Set to named alternate icon
+            if (Platform.OS === 'ios') {
+                if (iconId === 'default') {
+                    setAppIcon(null);
+                } else {
+                    setAppIcon(iconId);
+                }
             }
+            // On Android, the icon is cosmetic-only (shown in-app header)
+            // A native rebuild is required for actual launcher icon changes
         } catch (e) {
             console.warn('Could not change app icon:', e.message);
         }
@@ -107,9 +112,8 @@ export default function PremiumSettingsScreen() {
             return;
         }
         try {
-            const { launchImageLibraryAsync, MediaTypeOptions } = require('expo-image-picker');
-            const result = await launchImageLibraryAsync({
-                mediaTypes: MediaTypeOptions.Images,
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
                 aspect: [1, 1],
                 quality: 0.8,

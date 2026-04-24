@@ -30,12 +30,15 @@ import { Ionicons } from '@expo/vector-icons';
 import {
     getPost, upvotePost, downvotePost, addComment, getComments,
     upvoteComment, downvoteComment, savePost, unsavePost, getUpvoters, incrementShareCount,
+    addCommentReaction, editComment, deleteComment,
 } from '../../services/posts';
+import * as DocumentPicker from 'expo-document-picker';
 import { createReshare } from '../../services/reshares';
 import { getUserProfile, searchUsers } from '../../services/users';
 import { createNotification } from '../../services/notifications';
 import { formatTime, formatCount, getInitials } from '../../utils/helpers';
 import { COMMENT_FILTERS, REACTIONS } from '../../utils/constants';
+const COMMENT_REACTIONS = ['❤️', '😂', '😮', '🔥', '👍', '🍌'];
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadToCloudinary } from '../../config/cloudinary';
 import ImageViewer from '../../components/ImageViewer';
@@ -50,7 +53,8 @@ export default function PostDetailScreen() {
     const [activeMediaIndex, setActiveMediaIndex] = useState(0);
     const { id: postId } = useLocalSearchParams();
     const { user, userProfile } = useAuth();
-    const { themedColors: C, activeFont, downloadMediaEnabled } = usePremium();
+    const { themedColors: C, activeFont, downloadMediaEnabled, skinStyles } = usePremium();
+    const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [post, setPost] = useState(null);
@@ -82,6 +86,10 @@ export default function PostDetailScreen() {
     const [mentionResults, setMentionResults] = useState([]);
     const [showMentions, setShowMentions] = useState(false);
     const commentInputRef = useRef(null);
+    // Comment reactions, edit/delete, inline video
+    const [showCommentReactionPicker, setShowCommentReactionPicker] = useState(null);
+    const [editingComment, setEditingComment] = useState(null);
+    const [playingCommentVideos, setPlayingCommentVideos] = useState({});
 
     useEffect(() => { loadPost(); }, [postId]);
     useEffect(() => { loadComments(); }, [commentFilter]);
@@ -96,7 +104,10 @@ export default function PostDetailScreen() {
     };
 
     const loadComments = async () => {
-        const cmts = await getComments(postId, commentFilter);
+        let cmts = await getComments(postId, commentFilter);
+        // Filter out deleted comments and comments from blocked users
+        const blockedIds = userProfile?.blockedUsers || [];
+        cmts = cmts.filter(c => c.deleted !== true && !blockedIds.includes(c.authorId));
         const map = {};
         const roots = [];
         cmts.forEach(c => map[c.id] = { ...c, children: [] });
@@ -132,6 +143,26 @@ export default function PostDetailScreen() {
             const asset = result.assets[0];
             const isVideo = asset.type === 'video';
             setCommentMedia({ ...asset, mediaType: isVideo ? 'video' : 'image' });
+        }
+    };
+
+    // ─── Document/file picking for comments ───
+    const pickCommentFile = async () => {
+        setShowAttachMenu(false);
+        try {
+            const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+            if (!result.canceled && result.assets?.[0]) {
+                const file = result.assets[0];
+                setCommentMedia({
+                    uri: file.uri,
+                    mediaType: 'file',
+                    fileName: file.name,
+                    fileSize: file.size,
+                    mimeType: file.mimeType,
+                });
+            }
+        } catch (err) {
+            Alert.alert('Error', 'Failed to pick file');
         }
     };
 
@@ -216,53 +247,146 @@ export default function PostDetailScreen() {
         setMentionResults([]);
     };
 
-    // ─── Submit comment ───
+    // ─── Submit comment (or update if editing) ───
     const handleAddComment = async () => {
         if (!commentText.trim() && !commentMedia) return;
-        setUploadingComment(true);
-        let mediaUrl = null;
-        let mediaType = null;
-        let duration = null;
 
-        if (commentMedia) {
-            mediaType = commentMedia.mediaType || (commentMedia.type === 'video' ? 'video' : 'image');
-            const resourceType = mediaType === 'image' ? 'image' : 'video';
-            const uploaded = await uploadToCloudinary(commentMedia.uri || commentMedia, resourceType);
-            mediaUrl = uploaded.url;
-            duration = commentMedia.duration || uploaded.duration || null;
+        // If editing an existing comment
+        if (editingComment) {
+            try {
+                await editComment(postId, editingComment.id, commentText.trim());
+                setEditingComment(null);
+                setCommentText('');
+                loadComments();
+            } catch (err) {
+                Alert.alert('Error', 'Failed to update comment');
+            }
+            return;
         }
 
-        await addComment(postId, {
-            authorId: user.uid,
-            text: commentText.trim(),
-            mediaUrl,
-            mediaType,
-            duration,
-            parentCommentId: replyTo?.id || null,
-        });
+        setUploadingComment(true);
+        try {
+            let mediaUrl = null;
+            let mediaType = null;
+            let duration = null;
+            let fileName = null;
+            let fileSize = null;
 
-        // Send mention notifications
-        const mentions = commentText.match(/@(\w+)/g);
-        if (mentions) {
-            for (const mention of mentions) {
-                const username = mention.substring(1);
-                // Find user by username from comment authors or search
-                const mentionedProfile = Object.values(commentAuthors).find(
-                    p => p.username?.toLowerCase() === username.toLowerCase()
-                );
-                if (mentionedProfile && mentionedProfile.id !== user.uid) {
-                    createNotification(mentionedProfile.id, user.uid, 'mention', postId);
+            if (commentMedia) {
+                mediaType = commentMedia.mediaType || (commentMedia.type === 'video' ? 'video' : 'image');
+                if (mediaType === 'file') {
+                    // Upload files as raw to Cloudinary
+                    const uploaded = await uploadToCloudinary(commentMedia.uri, 'raw');
+                    mediaUrl = uploaded.url;
+                    fileName = commentMedia.fileName;
+                    fileSize = commentMedia.fileSize;
+                } else {
+                    const resourceType = mediaType === 'image' ? 'image' : 'video';
+                    const uploaded = await uploadToCloudinary(commentMedia.uri || commentMedia, resourceType);
+                    mediaUrl = uploaded.url;
+                    duration = commentMedia.duration || uploaded.duration || null;
                 }
             }
-        }
 
-        setCommentText('');
-        setCommentMedia(null);
-        setReplyTo(null);
-        setUploadingComment(false);
-        setShowMentions(false);
-        loadComments();
-        loadPost();
+            await addComment(postId, {
+                authorId: user.uid,
+                text: commentText.trim(),
+                mediaUrl,
+                mediaType,
+                duration,
+                fileName,
+                fileSize,
+                parentCommentId: replyTo?.id || null,
+            });
+
+            // Send mention notifications
+            const mentions = commentText.match(/@(\w+)/g);
+            if (mentions) {
+                for (const mention of mentions) {
+                    const username = mention.substring(1);
+                    const mentionedProfile = Object.values(commentAuthors).find(
+                        p => p.username?.toLowerCase() === username.toLowerCase()
+                    );
+                    if (mentionedProfile && mentionedProfile.id !== user.uid) {
+                        createNotification(mentionedProfile.id, user.uid, 'mention', postId);
+                    }
+                }
+            }
+
+            setCommentText('');
+            setCommentMedia(null);
+            setReplyTo(null);
+            setShowMentions(false);
+            loadComments();
+            loadPost();
+        } catch (err) {
+            console.error('Comment submission error:', err);
+            Alert.alert('Error', 'Failed to post comment. Please try again.');
+        } finally {
+            setUploadingComment(false);
+        }
+    };
+
+    // ─── Comment edit & delete ───
+    const handleEditComment = (comment) => {
+        setEditingComment(comment);
+        setCommentText(comment.text || '');
+        commentInputRef.current?.focus();
+    };
+
+    const handleDeleteComment = (comment) => {
+        Alert.alert('Delete Comment', 'Are you sure?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: async () => {
+                try {
+                    await deleteComment(postId, comment.id);
+                    loadComments();
+                    loadPost();
+                } catch (err) {
+                    Alert.alert('Error', 'Failed to delete comment');
+                }
+            }},
+        ]);
+    };
+
+    // ─── Comment long-press action sheet ───
+    const handleCommentLongPress = (comment) => {
+        const isOwner = comment.authorId === user?.uid;
+        const buttons = [];
+        if (comment.text) {
+            buttons.push({ text: '📋 Copy Text', onPress: async () => {
+                try { await Clipboard.setStringAsync(comment.text); Alert.alert('Copied!'); } catch {}
+            }});
+        }
+        if (isOwner) {
+            buttons.push({ text: '✏️ Edit', onPress: () => handleEditComment(comment) });
+            buttons.push({ text: '🗑️ Delete', style: 'destructive', onPress: () => handleDeleteComment(comment) });
+        } else {
+            buttons.push({ text: '🚩 Report', onPress: () => Alert.alert('Reported', 'Thank you for reporting.') });
+        }
+        buttons.push({ text: 'Cancel', style: 'cancel' });
+        Alert.alert('Comment', '', buttons);
+    };
+
+    // ─── Download comment media ───
+    const downloadCommentMedia = async (url, type) => {
+        try {
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Allow media library access to save files.');
+                return;
+            }
+            let filename = url.split('/').pop()?.split('?')[0] || `banana_${Date.now()}`;
+            if (!/\.[a-z0-9]+$/i.test(filename)) {
+                filename += type === 'video' ? '.mp4' : type === 'audio' ? '.m4a' : '.jpg';
+            }
+            const localUri = FileSystem.documentDirectory + filename;
+            const { uri: downloadedUri } = await FileSystem.downloadAsync(url, localUri);
+            await MediaLibrary.saveToLibraryAsync(downloadedUri);
+            Alert.alert('✅ Saved', 'Media saved to your gallery!');
+        } catch (err) {
+            Alert.alert('Download failed', err.message);
+        }
     };
 
     const handleUpvote = async () => { await upvotePost(postId, user.uid); loadPost(); };
@@ -345,44 +469,75 @@ export default function PostDetailScreen() {
     const renderCommentMedia = (comment) => {
         if (!comment.mediaUrl) return null;
 
-        // Image
-        if (comment.mediaType === 'image' || (!comment.mediaType && !comment.mediaUrl.match(/\.(mp4|mov|mp3|m4a|wav|ogg|webm)/i))) {
+        // File/document
+        if (comment.mediaType === 'file') {
             return (
-                <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
-                    <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
-                    <View style={styles.commentMediaZoomHint}>
-                        <Ionicons name="expand-outline" size={14} color="#fff" />
+                <TouchableOpacity
+                    onPress={() => Linking.openURL(comment.mediaUrl)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, backgroundColor: Colors.surfaceLight, borderRadius: 10, padding: 10, maxWidth: 220 }}
+                >
+                    <Ionicons name="document-outline" size={24} color={Colors.primary} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: Colors.text, fontSize: 13, fontWeight: '500' }} numberOfLines={1}>{comment.fileName || 'File'}</Text>
+                        {comment.fileSize ? <Text style={{ color: Colors.textTertiary, fontSize: 11 }}>{(comment.fileSize / 1024).toFixed(1)} KB</Text> : null}
                     </View>
+                    <TouchableOpacity onPress={() => downloadCommentMedia(comment.mediaUrl, 'file')}>
+                        <Ionicons name="download-outline" size={18} color={Colors.primary} />
+                    </TouchableOpacity>
                 </TouchableOpacity>
             );
         }
 
-        // Video
+        // Image
+        if (comment.mediaType === 'image' || (!comment.mediaType && !comment.mediaUrl.match(/\.(mp4|mov|mp3|m4a|wav|ogg|webm)/i))) {
+            return (
+                <View>
+                    <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
+                        <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
+                        <View style={styles.commentMediaZoomHint}>
+                            <Ionicons name="expand-outline" size={14} color="#fff" />
+                        </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => downloadCommentMedia(comment.mediaUrl, 'image')} style={{ position: 'absolute', top: 12, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10, padding: 4 }}>
+                        <Ionicons name="download-outline" size={14} color="#fff" />
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+
+        // Video — inline play/pause with mute
         if (comment.mediaType === 'video') {
             const isMuted = mutedCommentVideos[comment.id] !== false;
+            const isPlaying = !!playingCommentVideos[comment.id];
             return (
                 <View style={styles.commentVideoContainer}>
                     <TouchableOpacity
-                        onPress={() => setViewerVideo(comment.mediaUrl)}
+                        onPress={() => setPlayingCommentVideos(prev => ({ ...prev, [comment.id]: !isPlaying }))}
+                        onLongPress={() => setViewerVideo(comment.mediaUrl)}
                         activeOpacity={0.9}
                     >
                         <Video
                             source={{ uri: comment.mediaUrl }}
                             style={styles.commentMediaVideo}
                             resizeMode={ResizeMode.COVER}
-                            shouldPlay={false}
+                            shouldPlay={isPlaying}
                             isMuted={isMuted}
                             isLooping
                         />
-                        <View style={styles.commentVideoPlayOverlay}>
-                            <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.85)" />
-                        </View>
+                        {!isPlaying && (
+                            <View style={styles.commentVideoPlayOverlay}>
+                                <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.85)" />
+                            </View>
+                        )}
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.commentVideoMuteBtn}
                         onPress={() => setMutedCommentVideos(prev => ({ ...prev, [comment.id]: !isMuted }))}
                     >
                         <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => downloadCommentMedia(comment.mediaUrl, 'video')} style={{ position: 'absolute', top: 12, right: 8, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10, padding: 4 }}>
+                        <Ionicons name="download-outline" size={14} color="#fff" />
                     </TouchableOpacity>
                 </View>
             );
@@ -397,24 +552,33 @@ export default function PostDetailScreen() {
                         duration={comment.duration || 0}
                         compact
                     />
+                    <TouchableOpacity onPress={() => downloadCommentMedia(comment.mediaUrl, 'audio')} style={{ padding: 4 }}>
+                        <Ionicons name="download-outline" size={16} color={Colors.primary} />
+                    </TouchableOpacity>
                 </View>
             );
         }
 
-        // Fallback — show as image
+        // Fallback — show as image with download
         return (
-            <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
-                <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
-            </TouchableOpacity>
+            <View>
+                <TouchableOpacity onPress={() => setViewerImage(comment.mediaUrl)} activeOpacity={0.9}>
+                    <Image source={{ uri: comment.mediaUrl }} style={styles.commentMediaImage} resizeMode="cover" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => downloadCommentMedia(comment.mediaUrl, 'image')} style={{ position: 'absolute', top: 12, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10, padding: 4 }}>
+                    <Ionicons name="download-outline" size={14} color="#fff" />
+                </TouchableOpacity>
+            </View>
         );
     };
 
-    // ─── Render comment node (with OP badge) ───
+    // ─── Render comment node (with OP badge, reactions, long-press) ───
     const renderCommentNode = (comment, depth = 0) => {
         const cAuthor = commentAuthors[comment.authorId];
         const isOP = post && comment.authorId === post.authorId;
         return (
             <View key={comment.id} style={{ marginLeft: depth * 16, borderLeftWidth: depth > 0 ? 1 : 0, borderColor: Colors.border, paddingLeft: depth > 0 ? 8 : 0, marginTop: 12 }}>
+                <TouchableOpacity activeOpacity={0.8} onLongPress={() => handleCommentLongPress(comment)}>
                 <View style={styles.commentRow}>
                     <TouchableOpacity onPress={() => router.push(`/user/${comment.authorId}`)}>
                         {cAuthor?.avatar ? (
@@ -438,14 +602,13 @@ export default function PostDetailScreen() {
                             )}
                             <Text style={styles.commentTime}>
                                 {formatTime(comment.createdAt?.seconds ? comment.createdAt.seconds * 1000 : Date.now())}
+                                {comment.editedAt ? ' (edited)' : ''}
                             </Text>
                         </View>
-                        <TouchableOpacity onLongPress={async () => {
-                            try { await Clipboard.setStringAsync(comment.text || ''); Alert.alert('Copied!'); } catch {}
-                        }}>
-                            {renderTextWithMentions(comment.text, true)}
-                        </TouchableOpacity>
+                        {renderTextWithMentions(comment.text, true)}
                         {renderCommentMedia(comment)}
+
+                        {/* Comment actions row */}
                         <View style={styles.commentActions}>
                             <TouchableOpacity style={styles.commentVote} onPress={() => { upvoteComment(postId, comment.id, user.uid); loadComments(); }}>
                                 <Ionicons name="arrow-up" size={16} color={comment.upvotedBy?.includes(user?.uid) ? Colors.upvote : Colors.textTertiary} />
@@ -459,9 +622,41 @@ export default function PostDetailScreen() {
                             <TouchableOpacity onPress={() => setReplyTo(comment)} style={{ marginLeft: Spacing.lg }}>
                                 <Text style={styles.replyBtn}>Reply</Text>
                             </TouchableOpacity>
+                            {/* Emoji reaction button */}
+                            <TouchableOpacity onPress={() => setShowCommentReactionPicker(showCommentReactionPicker === comment.id ? null : comment.id)} style={{ marginLeft: Spacing.sm }}>
+                                <Ionicons name="happy-outline" size={16} color={showCommentReactionPicker === comment.id ? Colors.primary : Colors.textTertiary} />
+                            </TouchableOpacity>
                         </View>
+
+                        {/* Emoji reaction picker */}
+                        {showCommentReactionPicker === comment.id && (
+                            <View style={{ flexDirection: 'row', gap: 2, paddingVertical: 4, paddingHorizontal: 2, backgroundColor: Colors.surfaceLight, borderRadius: 16, alignSelf: 'flex-start', marginTop: 4 }}>
+                                {COMMENT_REACTIONS.map(emoji => (
+                                    <TouchableOpacity key={emoji} onPress={async () => {
+                                        setShowCommentReactionPicker(null);
+                                        await addCommentReaction(postId, comment.id, user.uid, emoji);
+                                        loadComments();
+                                    }} style={{ padding: 3 }}>
+                                        <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
+                        {/* Display comment reactions */}
+                        {comment.reactions && Object.keys(comment.reactions).length > 0 && (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                {Object.entries(comment.reactions).filter(([_, count]) => count > 0).map(([emoji, count]) => (
+                                    <View key={emoji} style={{ flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: Colors.surfaceLight, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                        <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                                        <Text style={{ color: Colors.textSecondary, fontSize: 10, fontWeight: '600' }}>{count}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
                     </View>
                 </View>
+                </TouchableOpacity>
                 {comment.children && comment.children.length > 0 && (
                     <View style={{ marginTop: 4 }}>
                         {comment.children.map(child => renderCommentNode(child, depth + 1))}
@@ -491,13 +686,13 @@ export default function PostDetailScreen() {
     }
 
     return (
-        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
+        <KeyboardAvoidingView style={[styles.container, { backgroundColor: C.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
             {/* Header */}
-            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, backgroundColor: C.surface, borderBottomColor: C.border }]}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                    <Ionicons name="arrow-back" size={24} color={C.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Post</Text>
+                <Text style={[styles.headerTitle, { color: C.text }]}>Post</Text>
                 <View style={{ width: 24 }} />
             </View>
 
@@ -507,7 +702,7 @@ export default function PostDetailScreen() {
                 ListHeaderComponent={() => (
                     <View>
                         {/* Post content */}
-                        <View style={styles.postCard}>
+                        <View style={[styles.postCard, { backgroundColor: C.surface, ...skin.cardStyle }]}>
                             <TouchableOpacity
                                 style={styles.postAuthor}
                                 onPress={() => router.push(`/user/${post.authorId}`)}
@@ -629,10 +824,20 @@ export default function PostDetailScreen() {
                                     <Text style={styles.actionCount}>{formatCount(post.commentCount || 0)}</Text>
                                 </View>
                                 <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-                                    <Ionicons name="paper-plane-outline" size={20} color={Colors.textSecondary} />
+                                    <Ionicons name="paper-plane-outline" size={20} color={C.textSecondary} />
                                     {(post.shareCount || 0) > 0 && (
-                                        <Text style={styles.actionCount}>{formatCount(post.shareCount)}</Text>
+                                        <Text style={[styles.actionCount, { color: C.textSecondary }]}>{formatCount(post.shareCount)}</Text>
                                     )}
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.actionBtn} onPress={async () => {
+                                    try {
+                                        await createReshare(user.uid, post.id);
+                                        Alert.alert('✅ Reshared', 'Post reshared to your followers!');
+                                    } catch (err) {
+                                        Alert.alert('Error', err.message || 'Could not reshare');
+                                    }
+                                }}>
+                                    <Ionicons name="repeat-outline" size={20} color={C.textSecondary} />
                                 </TouchableOpacity>
                                 <View style={{ flex: 1 }} />
                                 <TouchableOpacity onPress={handleSave}>
@@ -699,12 +904,12 @@ export default function PostDetailScreen() {
 
             {/* Comment input */}
             <View style={[styles.commentInputBar, { paddingBottom: insets.bottom + Spacing.sm }]}>
-                {replyTo && (
+                {(replyTo || editingComment) && (
                     <View style={styles.replyPreview}>
                         <Text style={styles.replyPreviewText}>
-                            Replying to {commentAuthors[replyTo.authorId]?.displayName || 'User'}
+                            {editingComment ? '✏️ Editing comment' : `Replying to ${commentAuthors[replyTo.authorId]?.displayName || 'User'}`}
                         </Text>
-                        <TouchableOpacity onPress={() => setReplyTo(null)}>
+                        <TouchableOpacity onPress={() => { setReplyTo(null); setEditingComment(null); setCommentText(''); }}>
                             <Ionicons name="close" size={16} color={Colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
@@ -749,7 +954,7 @@ export default function PostDetailScreen() {
                         <TextInput
                             ref={commentInputRef}
                             style={styles.commentInput}
-                            placeholder="Add a comment..."
+                            placeholder={editingComment ? "Edit your comment..." : "Add a comment..."}
                             placeholderTextColor={Colors.textTertiary}
                             value={commentText}
                             onChangeText={handleCommentTextChange}
@@ -773,6 +978,10 @@ export default function PostDetailScreen() {
                             <Ionicons name="images" size={22} color={Colors.primary} />
                             <Text style={styles.attachMenuText}>Media</Text>
                         </TouchableOpacity>
+                        <TouchableOpacity style={styles.attachMenuItem} onPress={pickCommentFile}>
+                            <Ionicons name="document" size={22} color={Colors.warning || '#FF9500'} />
+                            <Text style={styles.attachMenuText}>File</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity style={styles.attachMenuItem} onPress={startCommentAudioRecording}>
                             <Ionicons name="mic" size={22} color={Colors.error} />
                             <Text style={styles.attachMenuText}>Audio</Text>
@@ -794,6 +1003,11 @@ export default function PostDetailScreen() {
                             <View style={styles.videoPreviewThumb}>
                                 <Ionicons name="videocam" size={20} color={Colors.primary} />
                                 <Text style={styles.audioPreviewText}>Video attached</Text>
+                            </View>
+                        ) : commentMedia.mediaType === 'file' ? (
+                            <View style={styles.videoPreviewThumb}>
+                                <Ionicons name="document" size={20} color={Colors.warning || '#FF9500'} />
+                                <Text style={styles.audioPreviewText} numberOfLines={1}>{commentMedia.fileName || 'File'}</Text>
                             </View>
                         ) : (
                             <Image source={{ uri: commentMedia.uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />

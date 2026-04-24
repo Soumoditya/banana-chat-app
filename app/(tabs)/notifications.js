@@ -21,6 +21,8 @@ import { getUserProfile, followUser } from '../../services/users';
 import { formatTime, getInitials } from '../../utils/helpers';
 import { markAllNotificationsRead } from '../../services/notifications';
 import { showLocalNotification, setupNotificationResponseListener } from '../../services/pushNotifications';
+import useAppTheme from '../../hooks/useAppTheme';
+import PremiumBadge from '../../components/PremiumBadge';
 
 // ─── Time grouping helpers ───
 const isToday = (date) => {
@@ -156,6 +158,7 @@ function NotificationItem({ item, onPress, onDelete, onFollowBack, currentUserId
                         )}
                         <Text style={styles.notifText} numberOfLines={2}>
                             <Text style={styles.notifBold}>{item.actor?.displayName || 'Someone'}</Text>
+                            {item.actor?.isPremium && ' ✓'}
                             {' '}{getNotifText(item)}
                         </Text>
                     </View>
@@ -189,6 +192,7 @@ export default function NotificationsScreen() {
     const { user, userProfile, refreshProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C } = useAppTheme();
     const [notifications, setNotifications] = useState([]);
     const [sections, setSections] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -217,6 +221,9 @@ export default function NotificationsScreen() {
     useEffect(() => {
         if (!user) return;
 
+        // Track fallback unsub so we can clean it up
+        let fallbackUnsub = null;
+
         const q = query(
             collection(db, 'notifications'),
             where('targetUserId', '==', user.uid),
@@ -226,8 +233,11 @@ export default function NotificationsScreen() {
 
         const unsub = onSnapshot(q, async (snapshot) => {
             const notifs = [];
+            const blockedIds = userProfile?.blockedUsers || [];
             for (const docSnap of snapshot.docs) {
                 const data = { id: docSnap.id, ...docSnap.data() };
+                // Skip notifications from blocked users
+                if (blockedIds.includes(data.actorId)) continue;
                 if (data.actorId) {
                     try {
                         const profile = await getUserProfile(data.actorId);
@@ -266,7 +276,7 @@ export default function NotificationsScreen() {
                 where('targetUserId', '==', user.uid),
                 limit(200)
             );
-            onSnapshot(fallbackQ, async (snap) => {
+            fallbackUnsub = onSnapshot(fallbackQ, async (snap) => {
                 const notifs = [];
                 for (const d of snap.docs) {
                     const data = { id: d.id, ...d.data() };
@@ -281,7 +291,10 @@ export default function NotificationsScreen() {
             });
         });
 
-        return () => unsub();
+        return () => {
+            unsub();
+            if (fallbackUnsub) fallbackUnsub();
+        };
     }, [user]);
 
 
@@ -363,12 +376,12 @@ export default function NotificationsScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Activity</Text>
+        <View style={[styles.container, { paddingTop: insets.top, backgroundColor: C.background }]}>
+            <View style={[styles.header, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
+                <Text style={[styles.headerTitle, { color: C.text }]}>Activity</Text>
                 {notifications.length > 0 && (
                     <TouchableOpacity onPress={handleClearAll}>
-                        <Text style={styles.clearAllText}>Clear All</Text>
+                        <Text style={[styles.clearAllText, { color: C.primary }]}>Clear All</Text>
                     </TouchableOpacity>
                 )}
             </View>

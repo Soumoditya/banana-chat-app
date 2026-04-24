@@ -25,8 +25,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null;
-        allow update, delete: if request.auth != null
-                               && resource.data.authorId == request.auth.uid;
+        allow update, delete: if request.auth != null;
       }
     }
 
@@ -67,6 +66,16 @@ service cloud.firestore {
                     && resource.data.userId == request.auth.uid;
     }
 
+    // ── Premium Requests ─────────────────────────────────────────────────
+    // Users can create/read their own request (keyed by uid).
+    // Any authenticated user can read (admin checks happen in app code).
+    // Only the request owner can create; updates are done by admin via app.
+    match /premiumRequests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == requestId;
+      allow update: if request.auth != null;
+    }
+
     // ── Highlights / Story archives / Recently deleted ───────────────────
     match /highlights/{highlightId} {
       allow read: if request.auth != null;
@@ -75,7 +84,7 @@ service cloud.firestore {
                    && resource.data.authorId == request.auth.uid;
     }
 
-    match /story_archive/{docId} {
+    match /stories_archive/{docId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
       allow update, delete: if request.auth != null
@@ -100,6 +109,12 @@ service cloud.firestore {
     match /admin_messages/{msgId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
+    }
+
+    // ── Reports ──────────────────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
     }
 
     // NOTE: No catch-all rule. Any unlisted collection will be denied by

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Share } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Share, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
@@ -10,6 +10,28 @@ import { createReshare, undoReshare, getUserResharedPostIds, getResharesByUser }
 import { getUserProfile } from '../services/users';
 import { formatTime, formatCount, getInitials } from '../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ImageViewer from '../components/ImageViewer';
+import useAppTheme from '../hooks/useAppTheme';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+// Sub-component: renders images at original aspect ratio
+function FeedImage({ uri, onPress }) {
+    const [height, setHeight] = useState(250);
+    useEffect(() => {
+        if (uri) {
+            Image.getSize(uri, (w, h) => {
+                const ratio = h / w;
+                setHeight(Math.min(Math.max(SCREEN_WIDTH * ratio, 150), 500));
+            }, () => setHeight(250));
+        }
+    }, [uri]);
+    return (
+        <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
+            <Image source={{ uri }} style={{ width: '100%', height }} resizeMode="cover" />
+        </TouchableOpacity>
+    );
+}
 
 export default function PostFeedScreen() {
     const params = useLocalSearchParams();
@@ -17,12 +39,22 @@ export default function PostFeedScreen() {
     const { user, userProfile, refreshProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C, skin } = useAppTheme();
     const flatListRef = useRef(null);
     const [posts, setPosts] = useState([]);
     const [authors, setAuthors] = useState({});
     const [mutedVideos, setMutedVideos] = useState({});
     const [resharedPostIds, setResharedPostIds] = useState(new Set());
+    const [visiblePostId, setVisiblePostId] = useState(null);
+    const [viewerImage, setViewerImage] = useState(null);
     const [loading, setLoading] = useState(true);
+
+    const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+    const onViewableItemsChanged = useRef(({ viewableItems }) => {
+        if (viewableItems.length > 0) {
+            setVisiblePostId(viewableItems[0]?.item?.id || null);
+        }
+    }).current;
 
     useEffect(() => { loadPosts(); }, []);
 
@@ -41,6 +73,10 @@ export default function PostFeedScreen() {
                 const reshares = await getResharesByUser(userId || user?.uid);
                 loadedPosts = reshares.map(r => r.post).filter(Boolean);
             }
+
+            // Filter out posts from blocked users
+            const blockedUsers = userProfile?.blockedUsers || [];
+            loadedPosts = loadedPosts.filter(p => !blockedUsers.includes(p.authorId));
 
             setPosts(loadedPosts);
 
@@ -65,7 +101,7 @@ export default function PostFeedScreen() {
     };
 
     const toggleMute = (postId) => {
-        setMutedVideos(prev => ({ ...prev, [postId]: !prev[postId] }));
+        setMutedVideos(prev => ({ ...prev, [postId]: prev[postId] === false ? true : false }));
     };
 
     const handleUpvote = async (postId) => {
@@ -152,7 +188,7 @@ export default function PostFeedScreen() {
         const isReshared = resharedPostIds.has(post.id);
 
         return (
-            <View style={styles.postCard}>
+            <View style={[styles.postCard, { backgroundColor: C.surface, borderColor: C.border, ...skin.cardStyle }]}>
                 <View style={styles.postHeader}>
                     <TouchableOpacity style={styles.postAuthor} onPress={() => {
                         if (post.authorId === user?.uid) router.push('/(tabs)/profile');
@@ -173,23 +209,24 @@ export default function PostFeedScreen() {
                 </View>
 
                 {post.content ? <Text style={styles.postContent} selectable>{post.content}</Text> : null}
-
                 {post.media?.length > 0 && (() => {
                     const firstMedia = post.media[0];
                     const uri = typeof firstMedia === 'string' ? firstMedia : firstMedia?.uri;
                     const mType = typeof firstMedia === 'string' ? '' : (firstMedia?.type || '');
                     const isVideo = mType.includes('video') || (uri && /\.(mp4|mov|avi)/i.test(uri));
+                    const isMuted = mutedVideos[post.id] !== false;
+                    const isVisible = post.id === visiblePostId;
                     return (
                         <View style={styles.mediaContainer}>
                             {isVideo ? (
                                 <TouchableOpacity onPress={() => toggleMute(post.id)} activeOpacity={0.9}>
-                                    <Video source={{ uri }} style={styles.postImage} resizeMode={ResizeMode.COVER} shouldPlay={true} isMuted={!!mutedVideos[post.id]} isLooping useNativeControls={false} />
+                                    <Video source={{ uri }} style={styles.postImage} resizeMode={ResizeMode.COVER} shouldPlay={isVisible} isMuted={isMuted} isLooping useNativeControls={false} />
                                     <TouchableOpacity onPress={() => toggleMute(post.id)} style={styles.muteBtn}>
-                                        <Ionicons name={mutedVideos[post.id] ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+                                        <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
                                     </TouchableOpacity>
                                 </TouchableOpacity>
                             ) : (
-                                <Image source={{ uri }} style={styles.postImage} resizeMode="cover" />
+                                <FeedImage uri={uri} onPress={() => setViewerImage(uri)} />
                             )}
                         </View>
                     );
@@ -198,32 +235,32 @@ export default function PostFeedScreen() {
                 <View style={styles.postActions}>
                     <View style={styles.voteContainer}>
                         <TouchableOpacity onPress={() => handleUpvote(post.id)}>
-                            <Ionicons name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} size={24} color={isUpvoted ? Colors.upvote : Colors.textSecondary} />
+                            <Ionicons name={isUpvoted ? "arrow-up-circle" : "arrow-up-circle-outline"} size={24} color={isUpvoted ? C.upvote || Colors.upvote : C.textSecondary} />
                         </TouchableOpacity>
                         <Text style={styles.voteCount}>{formatCount((post.upvotes || 0) - (post.downvotes || 0))}</Text>
                         <TouchableOpacity onPress={() => handleDownvote(post.id)}>
-                            <Ionicons name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} size={24} color={isDownvoted ? Colors.downvote : Colors.textSecondary} />
+                            <Ionicons name={isDownvoted ? "arrow-down-circle" : "arrow-down-circle-outline"} size={24} color={isDownvoted ? C.downvote || Colors.downvote : C.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => router.push(`/post/${post.id}`)}>
-                        <Ionicons name="chatbubble-outline" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="chatbubble-outline" size={20} color={C.textSecondary} />
                         <Text style={styles.actionCount}>{formatCount(post.commentCount || 0)}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleReshare(post.id)}>
-                        <Ionicons name={isReshared ? "checkmark-done-outline" : "repeat-outline"} size={20} color={isReshared ? Colors.primary : Colors.textSecondary} />
-                        {(post.shareCount || 0) > 0 && <Text style={[styles.actionCount, isReshared && { color: Colors.primary }]}>{formatCount(post.shareCount)}</Text>}
+                        <Ionicons name={isReshared ? "checkmark-done-outline" : "repeat-outline"} size={20} color={isReshared ? C.primary : C.textSecondary} />
+                        {(post.shareCount || 0) > 0 && <Text style={[styles.actionCount, isReshared && { color: C.primary }]}>{formatCount(post.shareCount)}</Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(post.id)}>
-                        <Ionicons name="paper-plane-outline" size={20} color={Colors.textSecondary} />
+                        <Ionicons name="paper-plane-outline" size={20} color={C.textSecondary} />
                     </TouchableOpacity>
 
                     <View style={{ flex: 1 }} />
 
                     <TouchableOpacity onPress={() => handleSave(post.id)}>
-                        <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? Colors.primary : Colors.textSecondary} />
+                        <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? C.primary : C.textSecondary} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -247,8 +284,13 @@ export default function PostFeedScreen() {
                 renderItem={renderPost}
                 keyExtractor={item => item?.id || Math.random().toString()}
                 initialScrollIndex={parseInt(startIndex) || 0}
-                getItemLayout={(data, index) => ({ length: 500, offset: 500 * index, index })}
-                onScrollToIndexFailed={() => {}}
+                onScrollToIndexFailed={(info) => {
+                    setTimeout(() => {
+                        flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+                    }, 100);
+                }}
+                viewabilityConfig={viewabilityConfig}
+                onViewableItemsChanged={onViewableItemsChanged}
                 contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
                 ListEmptyComponent={() => (
                     <View style={styles.empty}>
@@ -257,6 +299,9 @@ export default function PostFeedScreen() {
                     </View>
                 )}
             />
+
+            {/* Image viewer */}
+            <ImageViewer visible={!!viewerImage} imageUrl={viewerImage} onClose={() => setViewerImage(null)} />
         </View>
     );
 }
@@ -265,7 +310,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
     headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-    postCard: { backgroundColor: Colors.card || Colors.surface, marginBottom: 8, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+    postCard: { backgroundColor: Colors.card || Colors.surface, marginBottom: 10, marginHorizontal: 6, borderRadius: 16, borderWidth: 0.5, borderColor: Colors.border },
     postHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10 },
     postAuthor: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     authorAvatar: { width: 36, height: 36, borderRadius: 18 },

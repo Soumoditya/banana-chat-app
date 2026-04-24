@@ -50,11 +50,18 @@ import ImageViewer from '../../components/ImageViewer';
 import VideoViewer from '../../components/VideoViewer';
 import AudioWavePlayer from '../../components/AudioWavePlayer';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
+import * as Clipboard from 'expo-clipboard';
+import { updateDoc, doc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import PremiumBadge from '../../components/PremiumBadge';
 
 export default function ChatScreen() {
     const { id: chatId } = useLocalSearchParams();
     const { user, userProfile } = useAuth();
-    const { themedColors: C, activeFont, iosEmojiEnabled } = usePremium();
+    const { themedColors: C, activeFont, iosEmojiEnabled, skinStyles } = usePremium();
+    const skin = skinStyles || { surfaceStyle: {}, cardStyle: {}, borderRadius: 16 };
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [messages, setMessages] = useState([]);
@@ -134,6 +141,28 @@ export default function ChatScreen() {
         if (chatInfo.type === 'group') return chatInfo.groupName || 'Group';
         if (chatInfo.nicknames?.[otherUser?.id]) return chatInfo.nicknames[otherUser.id];
         return otherUser?.displayName || 'User';
+    };
+
+    const handleDownloadMedia = async (url, type) => {
+        try {
+            if (type === 'document') {
+                Linking.openURL(url).catch(() => Alert.alert('Error', 'Cannot open file'));
+                return;
+            }
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Needed', 'Please allow media library access to save files.');
+                return;
+            }
+            const ext = type === 'video' ? '.mp4' : '.jpg';
+            const fileUri = FileSystem.documentDirectory + 'banana_download_' + Date.now() + ext;
+            Alert.alert('⬇️ Downloading...', 'Saving to your device gallery');
+            const { uri } = await FileSystem.downloadAsync(url, fileUri);
+            await MediaLibrary.saveToLibraryAsync(uri);
+            Alert.alert('✅ Saved!', `${type === 'video' ? 'Video' : 'Photo'} saved to gallery.`);
+        } catch (err) {
+            Alert.alert('Download Failed', err.message);
+        }
     };
 
     const handleSend = async () => {
@@ -459,25 +488,41 @@ export default function ChatScreen() {
                         )}
 
                         {msg.type === MESSAGE_TYPES.PHOTO && msg.media && (
-                            <TouchableOpacity onPress={() => setViewerImage(msg.media)} activeOpacity={0.9}>
-                                <Image source={{ uri: msg.media }} style={styles.msgMedia} resizeMode="cover" />
-                            </TouchableOpacity>
+                            <View>
+                                <TouchableOpacity onPress={() => setViewerImage(msg.media)} activeOpacity={0.9}>
+                                    <Image source={{ uri: msg.media }} style={styles.msgMedia} resizeMode="cover" />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.downloadOverlay}
+                                    onPress={() => handleDownloadMedia(msg.media, 'image')}
+                                >
+                                    <Ionicons name="download-outline" size={18} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
                         )}
 
                         {/* Video with expo-av */}
                         {msg.type === MESSAGE_TYPES.VIDEO && msg.media && (
-                            <TouchableOpacity onPress={() => setViewerVideo(msg.media)} activeOpacity={0.9} style={{ position: 'relative' }}>
-                                <Video
-                                    source={{ uri: msg.media }}
-                                    style={styles.msgMedia}
-                                    resizeMode={ResizeMode.COVER}
-                                    shouldPlay={false}
-                                    isMuted={true}
-                                />
-                                <View style={[styles.msgMedia, styles.videoOverlay]}>
-                                    <Ionicons name="play-circle" size={54} color="rgba(255,255,255,0.8)" />
-                                </View>
-                            </TouchableOpacity>
+                            <View>
+                                <TouchableOpacity onPress={() => setViewerVideo(msg.media)} activeOpacity={0.9} style={{ position: 'relative' }}>
+                                    <Video
+                                        source={{ uri: msg.media }}
+                                        style={styles.msgMedia}
+                                        resizeMode={ResizeMode.COVER}
+                                        shouldPlay={false}
+                                        isMuted={true}
+                                    />
+                                    <View style={[styles.msgMedia, styles.videoOverlay]}>
+                                        <Ionicons name="play-circle" size={54} color="rgba(255,255,255,0.8)" />
+                                    </View>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.downloadOverlay}
+                                    onPress={() => handleDownloadMedia(msg.media, 'video')}
+                                >
+                                    <Ionicons name="download-outline" size={18} color="#fff" />
+                                </TouchableOpacity>
+                            </View>
                         )}
 
                         {/* GIF */}
@@ -576,7 +621,7 @@ export default function ChatScreen() {
                                 <Text style={styles.actionBtnText}>Select</Text>
                             </TouchableOpacity>
                             {msg.text ? (
-                                <TouchableOpacity style={styles.actionBtn} onPress={async () => { try { const Clipboard = require('expo-clipboard'); await Clipboard.setStringAsync(msg.text); setShowReactions(null); } catch(e) {} }}>
+                                <TouchableOpacity style={styles.actionBtn} onPress={async () => { try { await Clipboard.setStringAsync(msg.text); setShowReactions(null); } catch(e) {} }}>
                                     <Ionicons name="copy-outline" size={18} color={Colors.text} />
                                     <Text style={styles.actionBtnText}>Copy</Text>
                                 </TouchableOpacity>
@@ -605,14 +650,14 @@ export default function ChatScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: C.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             {/* Header */}
-            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, backgroundColor: C.surface, borderBottomColor: C.border }]}>
                 <TouchableOpacity onPress={() => { if (selectMode) { setSelectMode(false); setSelectedMsgs([]); } else router.back(); }} style={styles.backBtn}>
-                    <Ionicons name={selectMode ? "close" : "arrow-back"} size={24} color={Colors.text} />
+                    <Ionicons name={selectMode ? "close" : "arrow-back"} size={24} color={C.text} />
                 </TouchableOpacity>
 
                 {selectMode ? (
@@ -639,7 +684,10 @@ export default function ChatScreen() {
                                 </View>
                             )}
                             <View>
-                                <Text style={styles.headerName}>{getChatName()}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                    <Text style={[styles.headerName, { color: C.text }]}>{getChatName()}</Text>
+                                    {otherUser && <PremiumBadge profile={otherUser} size={13} />}
+                                </View>
                                 {typingUserIds.length > 0 ? (
                                     <Text style={styles.typingText}>typing...</Text>
                                 ) : null}
@@ -648,13 +696,13 @@ export default function ChatScreen() {
 
                         <View style={styles.headerActions}>
                             <TouchableOpacity style={styles.headerBtn} onPress={() => router.push(`/call/${chatId}?type=audio&name=${encodeURIComponent(getChatName())}&avatar=${encodeURIComponent(otherUser?.photoURL || '')}`)}>
-                                <Ionicons name="call-outline" size={20} color={Colors.primary} />
+                                <Ionicons name="call-outline" size={20} color={C.primary} />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.headerBtn} onPress={() => router.push(`/call/${chatId}?type=video&name=${encodeURIComponent(getChatName())}&avatar=${encodeURIComponent(otherUser?.photoURL || '')}`)}>
-                                <Ionicons name="videocam-outline" size={22} color={Colors.primary} />
+                                <Ionicons name="videocam-outline" size={22} color={C.primary} />
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.headerBtn} onPress={() => setShowMenu(true)}>
-                                <Ionicons name="ellipsis-vertical" size={20} color={Colors.text} />
+                                <Ionicons name="ellipsis-vertical" size={20} color={C.text} />
                             </TouchableOpacity>
                         </View>
                     </>
@@ -950,8 +998,6 @@ export default function ChatScreen() {
                                     const newName = groupNameInput.trim();
                                     if (!newName) return;
                                     try {
-                                        const { updateDoc, doc } = require('firebase/firestore');
-                                        const { db } = require('../../config/firebase');
                                         await updateDoc(doc(db, 'chats', chatId), { groupName: newName });
                                         setShowGroupNameModal(false);
                                         setGroupNameInput('');
@@ -1094,4 +1140,9 @@ const styles = StyleSheet.create({
     fileBubble: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, minWidth: 180 },
     fileName: { color: Colors.text, fontSize: FontSize.sm, fontWeight: '600' },
     fileSize: { color: Colors.textTertiary, fontSize: FontSize.xs, marginTop: 2 },
+    downloadOverlay: {
+        position: 'absolute', bottom: 8, right: 8,
+        width: 32, height: 32, borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center',
+    },
 });

@@ -5,35 +5,11 @@
 
 import React, { useMemo } from 'react';
 import { Text, Image, View } from 'react-native';
+import { usePremium } from '../contexts/PremiumContext';
+import { APPLE_EMOJI_CDN, emojiToCodePoint, getAppleEmojiUrl } from '../utils/emoji';
 
 // Regex to match emoji characters (covers most common emoji)
 const EMOJI_REGEX = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})/gu;
-
-// CDN base for Apple emoji images (64px PNGs)
-const APPLE_EMOJI_CDN = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@15.1.2/img/apple/64';
-
-/**
- * Convert an emoji character to its Unicode code point string (for CDN lookup)
- * e.g. '😀' -> '1f600', '👋🏽' -> '1f44b-1f3fd'
- */
-const emojiToCodePoint = (emoji) => {
-    const codePoints = [];
-    for (const char of emoji) {
-        const cp = char.codePointAt(0);
-        if (cp !== undefined && cp !== 0xfe0f) { // Skip variation selector
-            codePoints.push(cp.toString(16));
-        }
-    }
-    return codePoints.join('-');
-};
-
-/**
- * Get Apple emoji image URL for a given emoji character
- */
-const getAppleEmojiUrl = (emoji) => {
-    const codePoint = emojiToCodePoint(emoji);
-    return `${APPLE_EMOJI_CDN}/${codePoint}.png`;
-};
 
 /**
  * EmojiText - Drop-in replacement for <Text> that renders Apple emoji as images.
@@ -125,8 +101,8 @@ export default function EmojiText({ children, style, iosEmoji = false, emojiSize
  *        <EmojiText {...emojiProps}>text with emoji</EmojiText>
  */
 export const useEmojiProps = () => {
+    // usePremium is imported at module level.
     try {
-        const { usePremium } = require('../contexts/PremiumContext');
         const { iosEmojiEnabled } = usePremium();
         return { iosEmoji: iosEmojiEnabled };
     } catch {

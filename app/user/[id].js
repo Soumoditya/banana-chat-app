@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserProfile, getUserByUsername, followUser, unfollowUser, addFriend, blockUser } from '../../services/users';
+import { getUserProfile, getUserByUsername, followUser, unfollowUser, addFriend, blockUser, incrementProfileView } from '../../services/users';
 import { getUserPosts } from '../../services/posts';
 import { getResharesByUser } from '../../services/reshares';
 import { getOrCreateDMChat } from '../../services/chat';
@@ -17,6 +17,7 @@ import ImageViewer from '../../components/ImageViewer';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumBadge, { PremiumFlair } from '../../components/PremiumBadge';
 import { isPremiumActive } from '../../utils/premium';
+import useAppTheme from '../../hooks/useAppTheme';
 
 // Social link config — platform name → { icon, color, urlPrefix }
 const SOCIAL_PLATFORMS = {
@@ -33,6 +34,7 @@ export default function UserProfileScreen() {
     const { user, userProfile, refreshProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C, skin } = useAppTheme();
     const [profile, setProfile] = useState(null);
     const [posts, setPosts] = useState([]);
     const [resharedPosts, setResharedPosts] = useState([]);
@@ -56,6 +58,11 @@ export default function UserProfileScreen() {
         }
 
         setProfile(p);
+
+        // Track profile view (once per visit, only for other users)
+        if (p && user?.uid && p.id !== user.uid) {
+            incrementProfileView(p.id);
+        }
 
         if (p) {
             const userPosts = await getUserPosts(p.id);
@@ -249,23 +256,48 @@ export default function UserProfileScreen() {
     }
 
     const isOwnProfile = user?.uid === profile?.id || user?.uid === userId;
+    const isBlocked = userProfile?.blockedUsers?.includes(profile?.id);
+
+    // Show blocked state
+    if (isBlocked) {
+        return (
+            <View style={styles.container}>
+                <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+                    <TouchableOpacity onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>@{profile.username}</Text>
+                    <TouchableOpacity onPress={handleMoreMenu}>
+                        <Ionicons name="ellipsis-horizontal" size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                </View>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 }}>
+                    <Ionicons name="ban-outline" size={64} color={Colors.textTertiary} />
+                    <Text style={{ color: Colors.text, fontSize: FontSize.lg, fontWeight: '600', marginTop: 16 }}>User Blocked</Text>
+                    <Text style={{ color: Colors.textTertiary, fontSize: FontSize.md, textAlign: 'center', marginTop: 8 }}>
+                        You have blocked @{profile.username}. Unblock them from Settings → Blocked Users to view their profile.
+                    </Text>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <>
-        <ScrollView style={styles.container}>
+        <ScrollView style={[styles.container, { backgroundColor: C.background }]}>
             {/* Header */}
-            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
+            <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, backgroundColor: C.surface, borderBottomColor: C.border }]}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                    <Ionicons name="arrow-back" size={24} color={C.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>@{profile.username}</Text>
+                <Text style={[styles.headerTitle, { color: C.text }]}>@{profile.username}</Text>
                 <TouchableOpacity onPress={handleMoreMenu}>
-                    <Ionicons name="ellipsis-horizontal" size={24} color={Colors.text} />
+                    <Ionicons name="ellipsis-horizontal" size={24} color={C.text} />
                 </TouchableOpacity>
             </View>
 
             {/* Profile */}
-            <View style={styles.profileSection}>
+            <View style={[styles.profileSection, { backgroundColor: C.surface, ...skin.cardStyle }]}>
                 <TouchableOpacity onPress={() => profile.avatar ? setViewerImage(profile.avatar) : null} activeOpacity={0.8}>
                     {profile.avatar ? (
                         <Image source={{ uri: profile.avatar }} style={styles.avatar} />

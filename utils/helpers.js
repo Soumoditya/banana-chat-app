@@ -48,7 +48,7 @@ export const truncateText = (text, maxLength = 50) => {
 };
 
 export const generateId = () => {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
 };
 
 export const getInitials = (name) => {
@@ -67,7 +67,8 @@ export const validateEmail = (email) => {
 };
 
 export const validateUsername = (username) => {
-    const re = /^[a-zA-Z0-9_]{3,20}$/;
+    // Allow letters, numbers, underscores, and dots (matching changeUsername in users.js)
+    const re = /^[a-zA-Z0-9._]{3,20}$/;
     return re.test(username);
 };
 

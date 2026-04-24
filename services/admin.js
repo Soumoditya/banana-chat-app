@@ -126,17 +126,20 @@ export const adminDeletePost = async (postId) => {
 
 /**
  * Get all posts by a specific user
+ * Uses single-field query + client-side filter to avoid composite index requirement.
  */
 export const getUserPosts = async (uid) => {
     const q = query(
         collection(db, 'posts'),
         where('authorId', '==', uid),
-        where('deleted', '==', false),
-        orderBy('createdAt', 'desc'),
-        limit(50)
+        limit(100)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    let posts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Client-side filter and sort (avoids needing composite index)
+    posts = posts.filter(p => p.deleted !== true);
+    posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    return posts.slice(0, 50);
 };
 
 /**

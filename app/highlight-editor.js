@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getArchivedStories, createHighlight, updateHighlight, getHighlights } from '../services/stories';
+import { getArchivedStories, createHighlight, updateHighlight, deleteHighlight, getHighlights } from '../services/stories';
 import { HIGHLIGHT_TYPES, STORY_LABELS } from '../utils/constants';
 
 export default function HighlightEditorScreen() {
@@ -103,13 +103,34 @@ export default function HighlightEditorScreen() {
                 <TouchableOpacity onPress={() => router.back()}>
                     <Ionicons name="close" size={24} color={Colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>New Highlight</Text>
+                <Text style={styles.headerTitle}>{editId ? 'Edit Highlight' : 'New Highlight'}</Text>
                 <TouchableOpacity onPress={handleSave} disabled={saving}>
                     <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-                        {saving ? 'Saving...' : 'Create'}
+                        {saving ? 'Saving...' : editId ? 'Update' : 'Create'}
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Delete button for existing highlights */}
+            {editId && (
+                <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, marginHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#EF4444' }}
+                    onPress={() => {
+                        Alert.alert('Delete Highlight', 'Are you sure you want to delete this highlight?', [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: async () => {
+                                try {
+                                    await deleteHighlight(editId);
+                                    Alert.alert('Deleted', 'Highlight removed!', [{ text: 'OK', onPress: () => router.back() }]);
+                                } catch (err) { Alert.alert('Error', err.message); }
+                            }},
+                        ]);
+                    }}
+                >
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 14 }}>Delete Highlight</Text>
+                </TouchableOpacity>
+            )}
 
             {/* Name input */}
             <View style={styles.nameRow}>

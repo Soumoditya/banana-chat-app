@@ -86,13 +86,15 @@ export const AuthProvider = ({ children }) => {
             const presenceRef = ref(rtdb, `presence/${uid}`);
             set(presenceRef, {
                 online: online,
-                lastSeen: Date.now(),
+                lastSeen: rtdbTimestamp(),
             });
 
             if (online) {
+                // Use serverTimestamp so lastSeen reflects actual disconnect time,
+                // not the stale Date.now() captured at connection time.
                 onDisconnect(presenceRef).set({
                     online: false,
-                    lastSeen: Date.now(),
+                    lastSeen: rtdbTimestamp(),
                 });
             }
         } catch (err) {

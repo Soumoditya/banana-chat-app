@@ -142,18 +142,11 @@ export default { Colors, Spacing, FontSize, BorderRadius, Shadow };
 // ─── Dynamic Theme Resolution ───
 // Merges a premium theme's colors into the base Colors object.
 // Falls back to base Colors if themeId is 'default' or unknown.
-export const getThemedColors = (themeId) => {
+// Accepts premiumThemes as optional parameter to avoid circular dependency.
+export const getThemedColors = (themeId, premiumThemes = null) => {
     if (!themeId || themeId === 'default') return { ...Colors };
 
-    // Import inline to avoid circular dependency
-    let PREMIUM_THEMES;
-    try {
-        PREMIUM_THEMES = require('./premium').PREMIUM_THEMES;
-    } catch {
-        return { ...Colors };
-    }
-
-    const theme = PREMIUM_THEMES[themeId];
+    const theme = premiumThemes?.[themeId];
     if (!theme) return { ...Colors };
 
     return {
@@ -181,7 +174,8 @@ export const getThemedColors = (themeId) => {
 
 // ─── UI Skin Style Resolution ───
 // Returns style overrides for card/surface elements based on skin selection.
-export const getSkinStyles = (skinId) => {
+// Accepts uiSkins as optional parameter to avoid circular dependency.
+export const getSkinStyles = (skinId, uiSkins = null) => {
     if (!skinId || skinId === 'default') {
         return {
             surfaceStyle: {},
@@ -190,37 +184,69 @@ export const getSkinStyles = (skinId) => {
         };
     }
 
-    let UI_SKINS;
-    try {
-        UI_SKINS = require('./premium').UI_SKINS;
-    } catch {
-        return { surfaceStyle: {}, cardStyle: {}, borderRadius: BorderRadius.lg };
-    }
-
-    const skin = UI_SKINS[skinId];
+    const skin = uiSkins?.[skinId];
     if (!skin) return { surfaceStyle: {}, cardStyle: {}, borderRadius: BorderRadius.lg };
 
+    const radius = skin.borderRadius || BorderRadius.lg;
+    const borderColor = skin.borderColor || 'rgba(255,255,255,0.06)';
+
     const surfaceStyle = {
-        borderRadius: skin.borderRadius || BorderRadius.lg,
+        borderRadius: radius,
         borderWidth: skin.borderWidth || 0.5,
-        borderColor: skin.borderColor || 'rgba(255,255,255,0.06)',
-        ...(skin.surfaceOpacity < 1 ? { opacity: skin.surfaceOpacity } : {}),
+        borderColor: borderColor,
+        overflow: 'hidden',
     };
 
+    // Make card styles more dramatic per skin
     const cardStyle = {
         ...surfaceStyle,
+        // Glass skins: visible border glow + shadow
         ...(skin.cardShadow ? {
-            shadowColor: skin.borderColor || '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-            elevation: 8,
+            shadowColor: borderColor,
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.45,
+            shadowRadius: 16,
+            elevation: 10,
         } : {}),
     };
+
+    // Per-skin enhancements for dramatically noticeable differences
+    if (skinId === 'glass') {
+        cardStyle.borderColor = 'rgba(255,255,255,0.18)';
+        cardStyle.borderWidth = 1.5;
+        surfaceStyle.borderColor = 'rgba(255,255,255,0.18)';
+        surfaceStyle.borderWidth = 1.5;
+    } else if (skinId === 'liquid_glass') {
+        cardStyle.borderColor = 'rgba(255,255,255,0.25)';
+        cardStyle.borderWidth = 2;
+        cardStyle.shadowColor = 'rgba(100,180,255,0.4)';
+        cardStyle.shadowOpacity = 0.5;
+        cardStyle.shadowRadius = 20;
+        surfaceStyle.borderColor = 'rgba(255,255,255,0.25)';
+        surfaceStyle.borderWidth = 2;
+    } else if (skinId === 'neon_glow') {
+        cardStyle.borderColor = 'rgba(0,255,136,0.5)';
+        cardStyle.borderWidth = 2;
+        cardStyle.shadowColor = '#00FF88';
+        cardStyle.shadowOpacity = 0.6;
+        cardStyle.shadowRadius = 18;
+        cardStyle.elevation = 12;
+        surfaceStyle.borderColor = 'rgba(0,255,136,0.4)';
+        surfaceStyle.borderWidth = 2;
+    } else if (skinId === 'aurora_shift') {
+        cardStyle.borderColor = 'rgba(168,85,247,0.45)';
+        cardStyle.borderWidth = 2;
+        cardStyle.shadowColor = '#A855F7';
+        cardStyle.shadowOpacity = 0.5;
+        cardStyle.shadowRadius = 22;
+        cardStyle.elevation = 12;
+        surfaceStyle.borderColor = 'rgba(168,85,247,0.35)';
+        surfaceStyle.borderWidth = 2;
+    }
 
     return {
         surfaceStyle,
         cardStyle,
-        borderRadius: skin.borderRadius || BorderRadius.lg,
+        borderRadius: radius,
     };
 };

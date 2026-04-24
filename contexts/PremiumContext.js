@@ -34,7 +34,7 @@ export const PremiumProvider = ({ children }) => {
         // Start with light/dark base colors, then layer premium theme on top
         const themedColors = activeThemeId === 'default'
             ? { ...baseColors }
-            : { ...baseColors, ...getThemedColors(activeThemeId) };
+            : { ...baseColors, ...getThemedColors(activeThemeId, PREMIUM_THEMES) };
 
         // ── Resolve active font ──
         let activeFontId = 'system';
@@ -55,7 +55,7 @@ export const PremiumProvider = ({ children }) => {
             }
         }
         const activeSkin = UI_SKINS[activeSkinId] || UI_SKINS.default;
-        const skinStyles = getSkinStyles(activeSkinId);
+        const skinStyles = getSkinStyles(activeSkinId, UI_SKINS);
 
         // ── Resolve active app icon ──
         let activeIconId = 'default';

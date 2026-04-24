@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, Animated, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ export default function HighlightViewerScreen() {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [author, setAuthor] = useState(null);
     const progress = useRef(new Animated.Value(0)).current;
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         loadData();
@@ -31,12 +32,18 @@ export default function HighlightViewerScreen() {
     }, [currentIndex, stories]);
 
     const loadData = async () => {
-        const ids = storyIdsParam ? JSON.parse(storyIdsParam) : [];
-        const fetchedStories = await getStoriesByIds(ids);
-        setStories(fetchedStories);
-        if (authorId) {
-            const p = await getUserProfile(authorId);
-            setAuthor(p);
+        try {
+            const ids = storyIdsParam ? JSON.parse(storyIdsParam) : [];
+            const fetchedStories = await getStoriesByIds(ids);
+            setStories(fetchedStories);
+            if (authorId) {
+                const p = await getUserProfile(authorId);
+                setAuthor(p);
+            }
+        } catch (err) {
+            console.error('Highlight load error:', err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -67,7 +74,6 @@ export default function HighlightViewerScreen() {
 
     const handleDeleteHighlight = () => {
         if (!highlightId) return;
-        const { Alert } = require('react-native');
         Alert.alert('Delete Highlight', 'Are you sure? This cannot be undone.', [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -81,10 +87,26 @@ export default function HighlightViewerScreen() {
 
     const current = stories[currentIndex];
 
+    if (loading) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={{ color: '#fff', marginTop: 16, fontSize: 14 }}>Loading highlight...</Text>
+                <TouchableOpacity style={[styles.closeBtn, { top: insets.top + 10 }]} onPress={() => router.back()}>
+                    <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
     if (!current) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.noStories}>No stories in this highlight</Text>
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="images-outline" size={56} color="rgba(255,255,255,0.4)" />
+                <Text style={[styles.noStories, { marginTop: 16 }]}>No stories in this highlight</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+                    Some stories may have been permanently deleted or are no longer available.
+                </Text>
                 <TouchableOpacity style={[styles.closeBtn, { top: insets.top + 10 }]} onPress={() => router.back()}>
                     <Ionicons name="close" size={28} color="#fff" />
                 </TouchableOpacity>

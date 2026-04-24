@@ -12,14 +12,16 @@ import { getInitials, debounce } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PremiumBadge from '../../components/PremiumBadge';
+import useAppTheme from '../../hooks/useAppTheme';
 
 const { width } = Dimensions.get('window');
 const GRID_SIZE = (width - 6) / 3;
 
 export default function ExploreScreen() {
-    const { user } = useAuth();
+    const { user, userProfile } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { C, skin } = useAppTheme();
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [results, setResults] = useState([]);
@@ -100,9 +102,11 @@ export default function ExploreScreen() {
                 searchPosts(text),
             ]);
 
+            // Filter out blocked users
+            const blockedIds = userProfile?.blockedUsers || [];
             const combined = [
-                ...users.map(u => ({ ...u, _type: 'user' })),
-                ...posts.map(p => ({ ...p, _type: 'post' })),
+                ...users.filter(u => !blockedIds.includes(u.id)).map(u => ({ ...u, _type: 'user' })),
+                ...posts.filter(p => !blockedIds.includes(p.authorId)).map(p => ({ ...p, _type: 'post' })),
             ];
             setResults(combined);
         } catch (err) {
@@ -298,15 +302,15 @@ export default function ExploreScreen() {
     );
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={[styles.container, { paddingTop: insets.top, backgroundColor: C.background }]}>
             {/* Search Bar */}
-            <View style={styles.searchBar}>
-                <Ionicons name="search" size={18} color={Colors.textTertiary} />
+            <View style={[styles.searchBar, { backgroundColor: C.surfaceLight }]}>
+                <Ionicons name="search" size={18} color={C.textTertiary} />
                 <TextInput
                     ref={searchRef}
-                    style={styles.searchInput}
+                    style={[styles.searchInput, { color: C.text }]}
                     placeholder="Search users, posts..."
-                    placeholderTextColor={Colors.textTertiary}
+                    placeholderTextColor={C.textTertiary}
                     value={searchQuery}
                     onChangeText={(text) => {
                         setSearchQuery(text);

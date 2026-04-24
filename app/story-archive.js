@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getArchivedStories, getArchiveDays } from '../services/stories';
 import { STORY_LABELS } from '../utils/constants';
+import ImageViewer from '../components/ImageViewer';
 
 const { width } = Dimensions.get('window');
 const CELL_SIZE = width / 7;
@@ -27,6 +28,9 @@ export default function StoryArchiveScreen() {
     const [activeDays, setActiveDays] = useState([]);
     const [selectedDay, setSelectedDay] = useState(null);
     const [dayStories, setDayStories] = useState([]);
+    const [viewAll, setViewAll] = useState(false);
+    const [allStories, setAllStories] = useState([]);
+    const [viewerImage, setViewerImage] = useState(null);
 
     useEffect(() => { loadActiveDays(); }, [month, year]);
 
@@ -80,7 +84,17 @@ export default function StoryArchiveScreen() {
                     <Ionicons name="arrow-back" size={24} color={Colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Story Archive</Text>
-                <View style={{ width: 24 }} />
+                <TouchableOpacity onPress={async () => {
+                    if (!viewAll) {
+                        const stories = await getArchivedStories(user.uid);
+                        setAllStories(stories);
+                    }
+                    setViewAll(!viewAll);
+                }}>
+                    <Text style={{ color: Colors.primary, fontWeight: '600', fontSize: 14 }}>
+                        {viewAll ? 'Calendar' : 'View All'}
+                    </Text>
+                </TouchableOpacity>
             </View>
 
             {/* Month navigator */}
@@ -143,7 +157,7 @@ export default function StoryArchiveScreen() {
                             showsHorizontalScrollIndicator={false}
                             keyExtractor={(item) => item.id}
                             renderItem={({ item }) => (
-                                <TouchableOpacity style={styles.storyThumb}>
+                                <TouchableOpacity style={styles.storyThumb} onPress={() => item.media && setViewerImage(item.media)}>
                                     <Image source={{ uri: item.media }} style={styles.storyThumbImage} />
                                     <View style={styles.storyTypeBadge}>
                                         <Text style={styles.storyTypeText}>
@@ -160,12 +174,51 @@ export default function StoryArchiveScreen() {
                 </View>
             )}
 
-            {!selectedDay && (
+            {!selectedDay && !viewAll && (
                 <View style={styles.emptyHint}>
                     <Ionicons name="calendar-outline" size={48} color={Colors.textTertiary} />
                     <Text style={styles.emptyHintText}>Tap a highlighted day to view stories</Text>
                 </View>
             )}
+
+            {/* View All Grid */}
+            {viewAll && (
+                <FlatList
+                    data={allStories}
+                    numColumns={3}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={{ flex: 1/3, aspectRatio: 0.75, margin: 1, overflow: 'hidden' }}
+                            onPress={() => item.media && setViewerImage(item.media)}
+                        >
+                            {item.media ? (
+                                <Image source={{ uri: item.media }} style={{ width: '100%', height: '100%' }} />
+                            ) : (
+                                <View style={{ flex: 1, backgroundColor: item.bgColor || '#1a1a2e', justifyContent: 'center', alignItems: 'center', padding: 4 }}>
+                                    <Text style={{ color: '#fff', fontSize: 10, textAlign: 'center' }} numberOfLines={3}>{item.text || 'Text'}</Text>
+                                </View>
+                            )}
+                            <View style={styles.storyTypeBadge}>
+                                <Text style={styles.storyTypeText}>{STORY_LABELS[item.type] || 'Story'}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={() => (
+                        <View style={styles.emptyHint}>
+                            <Text style={styles.emptyHintText}>No archived stories yet</Text>
+                        </View>
+                    )}
+                    contentContainerStyle={{ paddingHorizontal: 1 }}
+                />
+            )}
+
+            {/* Image Viewer */}
+            <ImageViewer
+                visible={!!viewerImage}
+                imageUrl={viewerImage}
+                onClose={() => setViewerImage(null)}
+            />
         </View>
     );
 }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Linking } from 'react-native';
+import { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Linking, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { usePremium } from '../contexts/PremiumContext';
@@ -8,7 +8,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { updateUserProfile } from '../services/users';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isPremiumActive, getPremiumFlair } from '../utils/premium';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../config/firebase';
 const APP_VERSION = '3.2.0';
+
+// Searchable settings items definition
+const SETTINGS_ITEMS = [
+    { id: 'theme', section: 'Appearance', icon: 'moon', title: 'Dark Mode', subtitle: 'Toggle between light and dark theme', keywords: ['theme', 'dark', 'light', 'mode', 'appearance', 'color'], type: 'toggle', key: 'isDark' },
+    { id: 'premium_active', section: 'Premium', icon: 'diamond', title: 'Plan Active', subtitle: 'Manage your premium features', keywords: ['premium', 'plan', 'manage', 'subscription'], action: '/premium-settings', premiumOnly: true },
+    { id: 'premium_upgrade', section: 'Premium', icon: 'star-outline', title: 'Upgrade Plan', subtitle: 'See all plans', keywords: ['upgrade', 'plan', 'premium', 'buy'], action: '/premium', premiumOnly: true },
+    { id: 'premium_go', section: 'Premium', icon: 'diamond-outline', title: 'Go Premium', subtitle: 'Verified badges, themes, fonts & more', keywords: ['premium', 'go', 'subscribe', 'badge', 'theme'], action: '/premium', freeOnly: true },
+    { id: 'private', section: 'Privacy', icon: 'lock-closed-outline', title: 'Private Profile', subtitle: 'Only followers can see your posts', keywords: ['private', 'profile', 'visibility', 'followers', 'privacy'], type: 'toggle', key: 'isPrivate' },
+    { id: 'blocked', section: 'Privacy', icon: 'people-outline', title: 'Blocked Users', subtitle: 'Manage blocked users', keywords: ['blocked', 'block', 'users', 'manage'], action: '/blocked-users' },
+    { id: 'close_friends', section: 'Privacy', icon: 'star-outline', title: 'Close Friends', subtitle: 'Manage close friends list', keywords: ['close', 'friends', 'list', 'manage'], action: '/close-friends' },
+    { id: 'story_archive', section: 'Stories & Archive', icon: 'calendar-outline', title: 'Story Archive', subtitle: 'Browse past stories by date', keywords: ['story', 'archive', 'past', 'calendar', 'stories'], action: '/story-archive' },
+    { id: 'archived_posts', section: 'Stories & Archive', icon: 'archive-outline', title: 'Archived Posts', subtitle: 'View your archived posts', keywords: ['archived', 'posts', 'view', 'archive'], action: '/archived-posts' },
+    { id: 'recently_deleted', section: 'Stories & Archive', icon: 'trash-outline', title: 'Recently Deleted', subtitle: 'Recover deleted stories & posts', keywords: ['deleted', 'recently', 'recover', 'trash', 'restore'], action: '/recently-deleted' },
+    { id: 'notifications', section: 'Stories & Archive', icon: 'notifications-outline', title: 'Notifications', subtitle: 'Manage notifications', keywords: ['notifications', 'manage', 'alerts', 'push'], action: '/notifications-settings' },
+    { id: 'account_type', section: 'Account', icon: 'person-circle-outline', title: 'Account Type', subtitle: 'Personal, Creator, or Business', keywords: ['account', 'type', 'personal', 'creator', 'business'], action: '/account-type' },
+    { id: 'change_password', section: 'Account', icon: 'key-outline', title: 'Change Password', subtitle: 'Send password reset email', keywords: ['change', 'password', 'reset', 'email', 'security'], type: 'action', actionKey: 'resetPassword' },
+    { id: 'email', section: 'Account', icon: 'mail-outline', title: 'Email', subtitle: '', keywords: ['email', 'address', 'account'], type: 'display' },
+    { id: 'admin', section: 'Admin', icon: 'shield-checkmark', title: 'Admin Panel', subtitle: 'Approve premium, manage users, broadcast', keywords: ['admin', 'panel', 'manage', 'approve', 'broadcast'], action: '/admin', adminOnly: true },
+    { id: 'faq', section: 'About & Help', icon: 'help-circle-outline', title: 'FAQ', subtitle: 'Frequently asked questions', keywords: ['faq', 'help', 'questions', 'support'], action: '/faq' },
+    { id: 'privacy_security', section: 'About & Help', icon: 'shield-checkmark-outline', title: 'Privacy & Security', subtitle: 'Manage your data', keywords: ['privacy', 'security', 'data', 'manage'], type: 'action', actionKey: 'privacyInfo' },
+    { id: 'terms', section: 'About & Help', icon: 'document-text-outline', title: 'Terms of Service', subtitle: 'Read our terms', keywords: ['terms', 'service', 'legal', 'policy'], type: 'action', actionKey: 'openTerms' },
+    { id: 'about', section: 'About & Help', icon: 'information-circle-outline', title: 'About Banana Chat', subtitle: `Version ${APP_VERSION}`, keywords: ['about', 'version', 'info', 'banana'], action: '/about' },
+];
 
 export default function SettingsScreen() {
     const { user, userProfile, signOut, isAdmin } = useAuth();
@@ -16,21 +41,155 @@ export default function SettingsScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [isPrivate, setIsPrivate] = useState(userProfile?.isPrivate || false);
+    const [searchQuery, setSearchQuery] = useState('');
 
-    const settingItem = (icon, title, subtitle, onPress, rightComponent) => (
-        <TouchableOpacity style={[styles.settingItem, { borderBottomColor: C.border }]} onPress={onPress} activeOpacity={0.6}>
-            <View style={styles.settingLeft}>
-                <View style={[styles.settingIconContainer, { backgroundColor: C.surfaceLight }]}>
-                    <Ionicons name={icon} size={20} color={C.primary} />
+    const hasPremium = isPremiumActive(userProfile);
+
+    // Filter settings items based on search query
+    const filteredItems = useMemo(() => {
+        let items = SETTINGS_ITEMS.filter(item => {
+            // Filter by role/premium
+            if (item.adminOnly && !isAdmin) return false;
+            if (item.premiumOnly && !hasPremium) return false;
+            if (item.freeOnly && hasPremium) return false;
+            return true;
+        });
+
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            items = items.filter(item =>
+                item.title.toLowerCase().includes(q) ||
+                item.subtitle?.toLowerCase().includes(q) ||
+                item.keywords.some(k => k.includes(q)) ||
+                item.section.toLowerCase().includes(q)
+            );
+        }
+
+        return items;
+    }, [searchQuery, isAdmin, hasPremium]);
+
+    // Group by section
+    const sections = useMemo(() => {
+        const grouped = {};
+        filteredItems.forEach(item => {
+            if (!grouped[item.section]) grouped[item.section] = [];
+            grouped[item.section].push(item);
+        });
+        return grouped;
+    }, [filteredItems]);
+
+    const handleAction = (item) => {
+        if (item.action) {
+            router.push(item.action);
+            return;
+        }
+        if (item.actionKey === 'resetPassword') {
+            if (!user?.email) {
+                Alert.alert('Error', 'No email associated with this account');
+                return;
+            }
+            sendPasswordResetEmail(auth, user.email)
+                .then(() => Alert.alert('✅ Reset Link Sent', `Check ${user.email} for the password reset link. After changing your password, you'll need to sign in again.`))
+                .catch(err => Alert.alert('Error', err.message));
+            return;
+        }
+        if (item.actionKey === 'privacyInfo') {
+            Alert.alert('Privacy & Security', 'Your data is stored securely with Firebase. You can manage your profile visibility in the Privacy section above, and delete your account by contacting support.');
+            return;
+        }
+        if (item.actionKey === 'openTerms') {
+            Linking.openURL('https://banana-chat.app/terms').catch(() => {});
+            return;
+        }
+    };
+
+    const renderItem = (item) => {
+        // Toggle items
+        if (item.type === 'toggle' && item.key === 'isDark') {
+            return (
+                <TouchableOpacity key={item.id} style={[styles.settingItem, { borderBottomColor: C.border }]} activeOpacity={0.6}>
+                    <View style={styles.settingLeft}>
+                        <View style={[styles.settingIconContainer, { backgroundColor: C.surfaceLight }]}>
+                            <Ionicons name={isDark ? 'moon' : 'sunny'} size={20} color={C.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.settingTitle, { color: C.text }]}>{isDark ? 'Dark Mode' : 'Light Mode'}</Text>
+                            <Text style={[styles.settingSubtitle, { color: C.textTertiary }]}>{item.subtitle}</Text>
+                        </View>
+                    </View>
+                    <Switch
+                        value={isDark}
+                        onValueChange={toggleTheme}
+                        trackColor={{ false: C.surfaceLight, true: C.primarySurface }}
+                        thumbColor={isDark ? C.primary : C.textTertiary}
+                    />
+                </TouchableOpacity>
+            );
+        }
+        if (item.type === 'toggle' && item.key === 'isPrivate') {
+            return (
+                <TouchableOpacity key={item.id} style={[styles.settingItem, { borderBottomColor: C.border }]} activeOpacity={0.6}>
+                    <View style={styles.settingLeft}>
+                        <View style={[styles.settingIconContainer, { backgroundColor: C.surfaceLight }]}>
+                            <Ionicons name={item.icon} size={20} color={C.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.settingTitle, { color: C.text }]}>{item.title}</Text>
+                            <Text style={[styles.settingSubtitle, { color: C.textTertiary }]}>{item.subtitle}</Text>
+                        </View>
+                    </View>
+                    <Switch
+                        value={isPrivate}
+                        onValueChange={async (val) => {
+                            setIsPrivate(val);
+                            await updateUserProfile(user.uid, { isPrivate: val });
+                        }}
+                        trackColor={{ false: C.surfaceLight, true: C.primarySurface }}
+                        thumbColor={isPrivate ? C.primary : C.textTertiary}
+                    />
+                </TouchableOpacity>
+            );
+        }
+        if (item.type === 'display') {
+            return (
+                <View key={item.id} style={[styles.settingItem, { borderBottomColor: C.border }]}>
+                    <View style={styles.settingLeft}>
+                        <View style={[styles.settingIconContainer, { backgroundColor: C.surfaceLight }]}>
+                            <Ionicons name={item.icon} size={20} color={C.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.settingTitle, { color: C.text }]}>{item.title}</Text>
+                        </View>
+                    </View>
+                    <Text style={{ color: C.textTertiary, fontSize: 13 }}>{user?.email || ''}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={[styles.settingTitle, { color: C.text }]}>{title}</Text>
-                    {subtitle && <Text style={[styles.settingSubtitle, { color: C.textTertiary }]}>{subtitle}</Text>}
+            );
+        }
+
+        // Premium active item — customized title
+        let title = item.title;
+        if (item.id === 'premium_active') title = `${getPremiumFlair(userProfile)} Plan Active`;
+        if (item.id === 'account_type') {
+            const cat = userProfile?.profileCategory;
+            title = cat === 'creator' ? 'Creator Account' : cat === 'business' ? 'Business Account' : 'Personal Account';
+        }
+
+        // Standard navigable item
+        return (
+            <TouchableOpacity key={item.id} style={[styles.settingItem, { borderBottomColor: C.border }]} onPress={() => handleAction(item)} activeOpacity={0.6}>
+                <View style={styles.settingLeft}>
+                    <View style={[styles.settingIconContainer, { backgroundColor: C.surfaceLight }]}>
+                        <Ionicons name={item.icon} size={20} color={C.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.settingTitle, { color: C.text }]}>{title}</Text>
+                        {item.subtitle ? <Text style={[styles.settingSubtitle, { color: C.textTertiary }]}>{item.subtitle}</Text> : null}
+                    </View>
                 </View>
-            </View>
-            {rightComponent || <Ionicons name="chevron-forward" size={20} color={C.textTertiary} />}
-        </TouchableOpacity>
-    );
+                <Ionicons name="chevron-forward" size={20} color={C.textTertiary} />
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <ScrollView
@@ -46,104 +205,51 @@ export default function SettingsScreen() {
                 <View style={{ width: 24 }} />
             </View>
 
-            {/* Appearance — Available to ALL users */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Appearance</Text>
-                {settingItem(
-                    isDark ? 'moon' : 'sunny',
-                    isDark ? 'Dark Mode' : 'Light Mode',
-                    'Toggle between light and dark theme',
-                    null,
-                    <Switch
-                        value={isDark}
-                        onValueChange={toggleTheme}
-                        trackColor={{ false: C.surfaceLight, true: C.primarySurface }}
-                        thumbColor={isDark ? C.primary : C.textTertiary}
-                    />
+            {/* Search Bar */}
+            <View style={[styles.searchContainer, { backgroundColor: C.surface, borderColor: C.border }]}>
+                <Ionicons name="search-outline" size={18} color={C.textTertiary} />
+                <TextInput
+                    style={[styles.searchInput, { color: C.text }]}
+                    placeholder="Search settings..."
+                    placeholderTextColor={C.textTertiary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                />
+                {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                        <Ionicons name="close-circle" size={18} color={C.textTertiary} />
+                    </TouchableOpacity>
                 )}
             </View>
 
-            {/* Premium */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Premium</Text>
-                {isPremiumActive(userProfile) ? (
-                    <>
-                        {settingItem('diamond', `${getPremiumFlair(userProfile)} Plan Active`, 'Manage your premium features', () => router.push('/premium-settings'))}
-                        {settingItem('star-outline', 'Upgrade Plan', 'See all plans', () => router.push('/premium'))}
-                    </>
-                ) : (
-                    settingItem('diamond-outline', 'Go Premium', 'Verified badges, themes, fonts & more', () => router.push('/premium'))
-                )}
-            </View>
+            {/* Search results count */}
+            {searchQuery.trim().length > 0 && (
+                <Text style={{ color: C.textTertiary, fontSize: 12, paddingHorizontal: Spacing.lg, marginTop: 4 }}>
+                    {filteredItems.length} result{filteredItems.length !== 1 ? 's' : ''} for "{searchQuery}"
+                </Text>
+            )}
 
-            {/* Privacy */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Privacy</Text>
-                {settingItem(
-                    'lock-closed-outline', 'Private Profile', 'Only followers can see your posts',
-                    null,
-                    <Switch
-                        value={isPrivate}
-                        onValueChange={async (val) => {
-                            setIsPrivate(val);
-                            await updateUserProfile(user.uid, { isPrivate: val });
-                        }}
-                        trackColor={{ false: C.surfaceLight, true: C.primarySurface }}
-                        thumbColor={isPrivate ? C.primary : C.textTertiary}
-                    />
-                )}
-                {settingItem('people-outline', 'Blocked Users', 'Manage blocked users', () => router.push('/blocked-users'))}
-                {settingItem('star-outline', 'Close Friends', 'Manage close friends list', () => router.push('/close-friends'))}
-            </View>
+            {/* Settings Sections */}
+            {Object.entries(sections).map(([sectionName, items]) => (
+                <View key={sectionName} style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+                    <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{sectionName}</Text>
+                    {items.map(item => renderItem(item))}
+                </View>
+            ))}
 
-            {/* Stories & Archive */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Stories & Archive</Text>
-                {settingItem('calendar-outline', 'Story Archive', 'Browse past stories by date', () => router.push('/story-archive'))}
-                {settingItem('archive-outline', 'Archived Posts', 'View your archived posts', () => router.push('/archived-posts'))}
-                {settingItem('trash-outline', 'Recently Deleted', 'Recover deleted stories & posts', () => router.push('/recently-deleted'))}
-                {settingItem('notifications-outline', 'Notifications', 'Manage notifications', () => router.push('/notifications-settings'))}
-            </View>
-
-            {/* Account Security */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Account</Text>
-                {settingItem('key-outline', 'Change Password', 'Send password reset email', async () => {
-                    if (!user?.email) {
-                        Alert.alert('Error', 'No email associated with this account');
-                        return;
-                    }
-                    try {
-                        const { sendPasswordResetEmail } = require('firebase/auth');
-                        const { auth } = require('../config/firebase');
-                        await sendPasswordResetEmail(auth, user.email);
-                        Alert.alert('✅ Reset Link Sent', `Check ${user.email} for the password reset link. After changing your password, you'll need to sign in again.`);
-                    } catch (err) {
-                        Alert.alert('Error', err.message);
-                    }
-                })}
-                {settingItem('mail-outline', 'Email', user?.email || 'Not set', null, <Text style={{ color: C.textTertiary, fontSize: 13 }}>{user?.email || ''}</Text>)}
-            </View>
-
-            {/* Admin Panel (visible to admins only) */}
-            {isAdmin && (
-                <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                    <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Admin</Text>
-                    {settingItem('shield-checkmark', 'Admin Panel', 'Approve premium, manage users, broadcast', () => router.push('/admin'))}
+            {/* No results */}
+            {searchQuery.trim().length > 0 && filteredItems.length === 0 && (
+                <View style={{ alignItems: 'center', paddingTop: 40 }}>
+                    <Ionicons name="search-outline" size={48} color={C.textTertiary} />
+                    <Text style={{ color: C.textTertiary, fontSize: 16, marginTop: 12 }}>No settings found</Text>
+                    <Text style={{ color: C.textTertiary, fontSize: 13, marginTop: 4 }}>Try a different search term</Text>
                 </View>
             )}
 
-            {/* About */}
-            <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>About</Text>
-                {settingItem('shield-checkmark-outline', 'Privacy & Security', 'Manage your data', () => Alert.alert('Privacy & Security', 'Your data is stored securely with Firebase. You can manage your profile visibility in the Privacy section above, and delete your account by contacting support.'))}
-                {settingItem('document-text-outline', 'Terms of Service', 'Read our terms', () => Linking.openURL('https://banana-chat.app/terms').catch(() => {}))}
-                {settingItem('information-circle-outline', 'About Banana Chat', `Version ${APP_VERSION}`, () => router.push('/about'))}
-            </View>
-
             {/* Sign Out */}
             <TouchableOpacity
-                style={styles.signOutBtn}
+                style={[styles.signOutBtn, { borderColor: C.error || Colors.error }]}
                 onPress={() => {
                     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
                         { text: 'Cancel', style: 'cancel' },
@@ -154,12 +260,12 @@ export default function SettingsScreen() {
                     ]);
                 }}
             >
-                <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-                <Text style={styles.signOutText}>Sign Out</Text>
+                <Ionicons name="log-out-outline" size={20} color={C.error || Colors.error} />
+                <Text style={[styles.signOutText, { color: C.error || Colors.error }]}>Sign Out</Text>
             </TouchableOpacity>
 
             <View style={styles.footer}>
-                <Text style={styles.footerText}>🍌 Banana Chat v{APP_VERSION}</Text>
+                <Text style={[styles.footerText, { color: C.textTertiary }]}>🍌 Banana Chat v{APP_VERSION}</Text>
             </View>
         </ScrollView>
     );
@@ -173,6 +279,16 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.surface, borderBottomWidth: 0.5, borderBottomColor: Colors.border,
     },
     headerTitle: { fontSize: FontSize.xl, fontWeight: 'bold', color: Colors.text },
+    searchContainer: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+        marginHorizontal: Spacing.md, marginTop: Spacing.md,
+        paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+        backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+        borderWidth: 1, borderColor: Colors.border,
+    },
+    searchInput: {
+        flex: 1, color: Colors.text, fontSize: FontSize.md, paddingVertical: 4,
+    },
     section: { marginTop: Spacing.lg, backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, marginHorizontal: Spacing.md, overflow: 'hidden', borderWidth: 0.5, borderColor: Colors.border },
     sectionTitle: { color: Colors.textSecondary, fontSize: FontSize.xs, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.xs },
     settingItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
