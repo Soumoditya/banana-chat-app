@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Dimensions, Image, Platform,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Dimensions, Image, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +17,7 @@ import { updateUserProfile } from '../services/users';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import * as ImagePicker from 'expo-image-picker';
+import { useToast } from '../contexts/ToastContext';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +29,7 @@ export default function PremiumSettingsScreen() {
     const plan = getPlanConfig(userProfile);
     const isActive = isPremiumActive(userProfile);
     const flair = getPremiumFlair(userProfile);
+    const { showToast } = useToast();
 
     // User preferences (from Firestore or defaults)
     const prefs = userProfile?.premiumPreferences || {};
@@ -49,7 +51,7 @@ export default function PremiumSettingsScreen() {
 
     useEffect(() => {
         if (!isActive) {
-            Alert.alert('Premium Required', 'Subscribe to a premium plan to access these features.');
+            showToast('Subscribe to a premium plan to access these features', 'warning', 'Premium Required');
             router.back();
         }
     }, []);
@@ -63,7 +65,7 @@ export default function PremiumSettingsScreen() {
             });
             await refreshProfile();
         } catch (err) {
-            Alert.alert('Error', 'Failed to save: ' + err.message);
+            showToast('Failed to save: ' + err.message, 'error');
         }
         setSaving(false);
     };
@@ -85,7 +87,7 @@ export default function PremiumSettingsScreen() {
 
     const handleIconChange = (iconId) => {
         if (iconId === 'custom' && !canCustom) {
-            Alert.alert('Super+ Required', 'Upload custom icons with Super or VIP plans.');
+            showToast('Upload custom icons with Super or VIP plans', 'warning', 'Super+ Required');
             return;
         }
         setSelectedIcon(iconId);
@@ -108,7 +110,7 @@ export default function PremiumSettingsScreen() {
 
     const handleCustomIconUpload = async () => {
         if (!canCustom) {
-            Alert.alert('Super+ Required', 'You need Super (₹499) or VIP (₹999) to upload custom icons.');
+            showToast('You need Super (₹499) or VIP (₹999) to upload custom icons', 'warning', 'Super+ Required');
             return;
         }
         try {
@@ -130,10 +132,10 @@ export default function PremiumSettingsScreen() {
                 });
                 await refreshProfile();
                 setSaving(false);
-                Alert.alert('✅ Custom Icon Set', 'Your custom app icon has been saved!');
+                showToast('Your custom app icon has been saved!', 'success', '✅ Custom Icon Set');
             }
         } catch (err) {
-            Alert.alert('Error', 'Could not pick image: ' + err.message);
+            showToast('Could not pick image: ' + err.message, 'error');
         }
     };
 

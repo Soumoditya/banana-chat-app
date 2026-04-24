@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { AuthProvider } from '../contexts/AuthContext';
 import { PremiumProvider } from '../contexts/PremiumContext';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
+import { ToastProvider } from '../contexts/ToastContext';
 import { StatusBar } from 'expo-status-bar';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -142,6 +143,7 @@ export default function RootLayout() {
                     <ThemeProvider>
                         <AuthProvider>
                             <PremiumProvider>
+                                <ToastProvider>
                                 <ThemedApp />
                                 <Stack
                                     screenOptions={{
@@ -179,7 +181,9 @@ export default function RootLayout() {
                                     <Stack.Screen name="account-type" options={{ animation: 'slide_from_right' }} />
                                     <Stack.Screen name="profile-analytics" options={{ animation: 'slide_from_right' }} />
                                     <Stack.Screen name="premium-settings" options={{ animation: 'slide_from_right' }} />
+                                    <Stack.Screen name="highlight-viewer" options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
                                 </Stack>
+                                </ToastProvider>
                             </PremiumProvider>
                         </AuthProvider>
                     </ThemeProvider>

@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize, BorderRadius } from '../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import useAppTheme from '../hooks/useAppTheme';
 import * as Clipboard from 'expo-clipboard';
+import { useToast } from '../contexts/ToastContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -27,43 +28,53 @@ const DEVELOPER = {
 };
 
 const VERSION_HISTORY = [
-    { version: '3.2.0', date: 'Apr 2026', title: 'Phase 3 — Full Feature Build', changes: [
-        'Username change with uniqueness check',
-        'Profile analytics with Instagram-like graphs',
-        'Profile category system (Personal/Creator/Business)',
-        'Real push notifications via Expo Push API',
-        'Unread badges on tab bar',
-        'Chat media download',
-        'FAQ section',
-        'About page with developer info & UPI donation',
-    ]},
-    { version: '3.1.0', date: 'Apr 2026', title: 'Phase 2 — UI Stabilization', changes: [
-        'Global theming system across all screens',
-        'Premium badge propagation',
-        'Enhanced UI skins with dramatic visual effects',
-        'Admin plan picker modal',
-        'Post reshare button',
-    ]},
-    { version: '3.0.0', date: 'Apr 2026', title: 'Phase 1 — Premium & Monetization', changes: [
-        'Tiered premium plans (Standard to VIP)',
-        'Custom themes, fonts, and UI skins',
-        'Premium badges and verification',
-        'Story highlights system',
-        'App icon customization',
-    ]},
-    { version: '2.0.0', date: 'Mar 2026', title: 'Social Features', changes: [
-        'Real-time chat with RTDB',
-        'Voice messages & media sharing',
-        'Stories with close friends support',
-        'Follow/unfollow system',
-        'Notifications system',
-    ]},
-    { version: '1.0.0', date: 'Feb 2026', title: 'Initial Release', changes: [
-        'User registration & authentication',
-        'Posts with media attachments',
-        'Basic profile system',
-        'Like and comment system',
-    ]},
+    {
+        version: '3.2.0', date: 'Apr 2026', title: 'Phase 3 — Full Feature Build', changes: [
+            'Username change with uniqueness check',
+            'Profile analytics with Instagram-like graphs',
+            'Profile category system (Personal/Creator/Business)',
+            'Real push notifications via Expo Push API',
+            'Unread badges on tab bar',
+            'Chat media download',
+            'FAQ section',
+            'About page with developer info & UPI donation',
+        ]
+    },
+    {
+        version: '3.1.0', date: 'Apr 2026', title: 'Phase 2 — UI Stabilization', changes: [
+            'Global theming system across all screens',
+            'Premium badge propagation',
+            'Enhanced UI skins with dramatic visual effects',
+            'Admin plan picker modal',
+            'Post reshare button',
+        ]
+    },
+    {
+        version: '3.0.0', date: 'Apr 2026', title: 'Phase 1 — Premium & Monetization', changes: [
+            'Tiered premium plans (Standard to VIP)',
+            'Custom themes, fonts, and UI skins',
+            'Premium badges and verification',
+            'Story highlights system',
+            'App icon customization',
+        ]
+    },
+    {
+        version: '2.0.0', date: 'Mar 2026', title: 'Social Features', changes: [
+            'Real-time chat with RTDB',
+            'Voice messages & media sharing',
+            'Stories with close friends support',
+            'Follow/unfollow system',
+            'Notifications system',
+        ]
+    },
+    {
+        version: '1.0.0', date: 'Feb 2026', title: 'Initial Release', changes: [
+            'User registration & authentication',
+            'Posts with media attachments',
+            'Basic profile system',
+            'Like and comment system',
+        ]
+    },
 ];
 
 const DONATION_AMOUNTS = [
@@ -78,6 +89,7 @@ export default function AboutScreen() {
     const insets = useSafeAreaInsets();
     const { C, skin } = useAppTheme();
     const [expandedVersion, setExpandedVersion] = useState('3.2.0');
+    const { showToast } = useToast();
 
     const toggleVersion = (v) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -87,23 +99,21 @@ export default function AboutScreen() {
     const handleDonate = (amount) => {
         const upiUrl = `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(DEVELOPER.name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Banana Chat Donation - ₹${amount}`)}`;
         Linking.openURL(upiUrl).catch(() => {
-            Alert.alert('UPI App Not Found', 'Please install a UPI app (GPay, PhonePe, Paytm) and try again.', [
-                { text: 'Copy UPI ID', onPress: () => copyUPI() },
-                { text: 'OK' },
-            ]);
+            showToast('Install a UPI app (GPay, PhonePe, Paytm) to donate', 'warning', 'UPI App Not Found');
+            copyUPI();
         });
     };
 
     const copyUPI = async () => {
         try {
             await Clipboard.setStringAsync(UPI_ID);
-            Alert.alert('Copied!', `UPI ID copied: ${UPI_ID}`);
+            showToast(`UPI ID copied: ${UPI_ID}`, 'success', 'Copied!');
         } catch {
-            Alert.alert('UPI ID', UPI_ID);
+            showToast(UPI_ID, 'info', 'UPI ID');
         }
     };
 
-    const openLink = (url) => Linking.openURL(url).catch(() => {});
+    const openLink = (url) => Linking.openURL(url).catch(() => { });
 
     return (
         <ScrollView
@@ -233,8 +243,26 @@ export default function AboutScreen() {
 
             {/* Legal */}
             <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Legal</Text>
-                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://banana-chat.app/terms')}>
+                <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Links</Text>
+                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://banana-chat-app.vercel.app')}>
+                    <View style={styles.linkLeft}>
+                        <View style={[styles.iconBox, { backgroundColor: '#3B82F620' }]}>
+                            <Ionicons name="globe-outline" size={18} color="#3B82F6" />
+                        </View>
+                        <Text style={[styles.linkText, { color: C.text }]}>Website</Text>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={C.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://github.com/Soumoditya/banana-chat-app')}>
+                    <View style={styles.linkLeft}>
+                        <View style={[styles.iconBox, { backgroundColor: '#8B5CF620' }]}>
+                            <Ionicons name="logo-github" size={18} color="#8B5CF6" />
+                        </View>
+                        <Text style={[styles.linkText, { color: C.text }]}>GitHub</Text>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={C.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://banana-chat-app.vercel.app')}>
                     <View style={styles.linkLeft}>
                         <View style={[styles.iconBox, { backgroundColor: C.surfaceLight }]}>
                             <Ionicons name="document-text-outline" size={18} color={C.primary} />
@@ -243,7 +271,7 @@ export default function AboutScreen() {
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={C.textTertiary} />
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://banana-chat.app/privacy')}>
+                <TouchableOpacity style={[styles.linkItem, { borderBottomColor: C.border }]} onPress={() => openLink('https://banana-chat-app.vercel.app')}>
                     <View style={styles.linkLeft}>
                         <View style={[styles.iconBox, { backgroundColor: C.surfaceLight }]}>
                             <Ionicons name="shield-outline" size={18} color={C.primary} />

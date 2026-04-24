@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Linking, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Linking, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { usePremium } from '../contexts/PremiumContext';
@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isPremiumActive, getPremiumFlair } from '../utils/premium';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
+import { useToast } from '../contexts/ToastContext';
 const APP_VERSION = '3.2.0';
 
 // Searchable settings items definition
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
     const [searchQuery, setSearchQuery] = useState('');
 
     const hasPremium = isPremiumActive(userProfile);
+    const { showToast, showConfirm } = useToast();
 
     // Filter settings items based on search query
     const filteredItems = useMemo(() => {
@@ -85,20 +87,20 @@ export default function SettingsScreen() {
         }
         if (item.actionKey === 'resetPassword') {
             if (!user?.email) {
-                Alert.alert('Error', 'No email associated with this account');
+                showToast('No email associated with this account', 'error');
                 return;
             }
             sendPasswordResetEmail(auth, user.email)
-                .then(() => Alert.alert('✅ Reset Link Sent', `Check ${user.email} for the password reset link. After changing your password, you'll need to sign in again.`))
-                .catch(err => Alert.alert('Error', err.message));
+                .then(() => showToast(`Reset link sent to ${user.email}`, 'success', '✅ Check your email'))
+                .catch(err => showToast(err.message, 'error'));
             return;
         }
         if (item.actionKey === 'privacyInfo') {
-            Alert.alert('Privacy & Security', 'Your data is stored securely with Firebase. You can manage your profile visibility in the Privacy section above, and delete your account by contacting support.');
+            showToast('Your data is stored securely with Firebase. Manage visibility in Privacy settings.', 'info', 'Privacy & Security');
             return;
         }
         if (item.actionKey === 'openTerms') {
-            Linking.openURL('https://banana-chat.app/terms').catch(() => {});
+            Linking.openURL('https://banana-chat-app.vercel.app').catch(() => { });
             return;
         }
     };
@@ -251,13 +253,10 @@ export default function SettingsScreen() {
             <TouchableOpacity
                 style={[styles.signOutBtn, { borderColor: C.error || Colors.error }]}
                 onPress={() => {
-                    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                            text: 'Sign Out', style: 'destructive',
-                            onPress: async () => { await signOut(); router.replace('/(auth)/login'); }
-                        },
-                    ]);
+                    showConfirm('Sign Out', 'Are you sure you want to sign out?',
+                        async () => { await signOut(); router.replace('/(auth)/login'); },
+                        { variant: 'destructive', confirmText: 'Sign Out', icon: 'log-out-outline' }
+                    );
                 }}
             >
                 <Ionicons name="log-out-outline" size={20} color={C.error || Colors.error} />

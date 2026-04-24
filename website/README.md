@@ -4,7 +4,7 @@ A premium, responsive landing page for the Banana Chat social platform. Built wi
 
 ## 🌐 Live Demo
 
-[**banana-chat-website.vercel.app**](https://website-six-tawny-20.vercel.app)
+[**banana-chat-app.vercel.app**](https://banana-chat-app.vercel.app)
 
 ## ✨ Features
 
