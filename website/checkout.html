@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banana Chat — Checkout</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0A0A0A; color: #fff; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .checkout-card {
+            background: #1A1A1A; border-radius: 20px; padding: 32px;
+            max-width: 400px; width: 100%; text-align: center;
+            border: 1px solid #2A2A2A;
+        }
+        .logo { font-size: 48px; margin-bottom: 12px; }
+        h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .plan-name { color: #FFD700; font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+        .plan-price { font-size: 32px; font-weight: 800; margin-bottom: 4px; }
+        .plan-price span { font-size: 14px; color: #888; font-weight: 400; }
+        .divider { height: 1px; background: #2A2A2A; margin: 20px 0; }
+        .pay-btn {
+            width: 100%; padding: 16px; border: none; border-radius: 12px;
+            background: linear-gradient(135deg, #FFD700, #FF9500);
+            color: #000; font-size: 16px; font-weight: 700; cursor: pointer;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .pay-btn:active { transform: scale(0.97); opacity: 0.9; }
+        .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status { margin-top: 16px; font-size: 14px; color: #888; min-height: 20px; }
+        .status.error { color: #EF4444; }
+        .status.success { color: #10B981; }
+        .secure { margin-top: 16px; font-size: 11px; color: #555; }
+        .secure svg { width: 12px; height: 12px; vertical-align: middle; margin-right: 4px; }
+        .features { text-align: left; margin: 16px 0; }
+        .features li {
+            list-style: none; padding: 6px 0; font-size: 13px; color: #A0A0B8;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .features li::before { content: '✓'; color: #FFD700; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <div class="checkout-card">
+        <div class="logo">🍌</div>
+        <h1>Banana Chat Premium</h1>
+        <div class="plan-name" id="planName">Loading...</div>
+        <div class="plan-price" id="planPrice">₹—<span>/month</span></div>
+        <div class="divider"></div>
+        <ul class="features" id="features"></ul>
+        <button class="pay-btn" id="payBtn" onclick="startPayment()" disabled>Loading...</button>
+        <div class="status" id="status"></div>
+        <div class="secure">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Secured by Razorpay • 256-bit encryption
+        </div>
+    </div>
+
+    <script>
+        const PLANS = {
+            standard:     { name: 'Standard',  price: 99,  features: ['Blue verified badge', 'iOS emoji support', '15 media/post', '800 char posts', 'Ad-free'] },
+            premium:      { name: 'Premium',   price: 199, features: ['Gold verified badge', '3 font styles', '2 themes', 'Media downloads', '1000 char posts'] },
+            premium_plus: { name: 'Premium+',  price: 299, features: ['Gold+ badge', '5 fonts + 5 themes', 'Profile analytics', 'Glass UI skin', 'Custom icons'] },
+            elite:        { name: 'Elite',     price: 399, features: ['Purple badge', 'All fonts & themes', 'Glassmorphism UI', 'Priority search', '30 media/post'] },
+            super:        { name: 'Super',     price: 499, features: ['Golden Banana 🍌', 'All UI skins', 'Upload custom icons', 'Unlimited media', '48h stories'] },
+            vip:          { name: 'VIP',       price: 999, features: ['Black Banana 🖤', 'Aurora Shift UI', '72h stories', 'Everything unlocked', 'First access'] },
+        };
+
+        // Read params from URL
+        const params = new URLSearchParams(window.location.search);
+        const planId = params.get('plan') || 'premium_plus';
+        const userId = params.get('uid') || '';
+        const userEmail = params.get('email') || '';
+        const userName = params.get('name') || '';
+        const source = params.get('source') || 'web'; // 'app' or 'web'
+
+        const plan = PLANS[planId];
+        if (plan) {
+            document.getElementById('planName').textContent = plan.name + ' Plan';
+            document.getElementById('planPrice').innerHTML = `₹${plan.price}<span>/month</span>`;
+            const featuresList = document.getElementById('features');
+            plan.features.forEach(f => {
+                const li = document.createElement('li');
+                li.textContent = f;
+                featuresList.appendChild(li);
+            });
+            document.getElementById('payBtn').textContent = `Pay ₹${plan.price}`;
+            document.getElementById('payBtn').disabled = false;
+        }
+
+        let orderData = null;
+
+        async function startPayment() {
+            const btn = document.getElementById('payBtn');
+            const status = document.getElementById('status');
+            btn.disabled = true;
+            btn.textContent = 'Creating order...';
+            status.textContent = '';
+            status.className = 'status';
+
+            try {
+                // 1. Create order on server
+                const res = await fetch('/api/create-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ planId }),
+                });
+                orderData = await res.json();
+
+                if (!orderData.success) throw new Error(orderData.error || 'Order creation failed');
+
+                // 2. Open Razorpay Checkout
+                const options = {
+                    key: orderData.key_id,
+                    amount: orderData.amount,
+                    currency: orderData.currency,
+                    name: 'Banana Chat',
+                    description: `${plan.name} Plan — Monthly`,
+                    order_id: orderData.order_id,
+                    prefill: {
+                        email: userEmail || undefined,
+                        name: userName || undefined,
+                    },
+                    theme: { color: '#FFD700', backdrop_color: '#0A0A0A' },
+                    modal: { ondismiss: () => { btn.disabled = false; btn.textContent = `Pay ₹${plan.price}`; } },
+                    handler: async function (response) {
+                        btn.textContent = 'Verifying...';
+                        status.textContent = 'Verifying payment...';
+
+                        try {
+                            // 3. Verify payment on server
+                            const verifyRes = await fetch('/api/verify-payment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    razorpay_payment_id: response.razorpay_payment_id,
+                                    razorpay_order_id: response.razorpay_order_id,
+                                    razorpay_signature: response.razorpay_signature,
+                                    planId,
+                                    userId,
+                                }),
+                            });
+                            const result = await verifyRes.json();
+
+                            if (result.success) {
+                                status.textContent = 'Payment verified! ✅';
+                                status.className = 'status success';
+                                btn.textContent = '✅ Payment Successful';
+                                btn.style.background = '#10B981';
+                                btn.style.color = '#fff';
+
+                                // If opened from app WebView, post message back
+                                if (source === 'app' && window.ReactNativeWebView) {
+                                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                                        type: 'PAYMENT_SUCCESS',
+                                        payment_id: response.razorpay_payment_id,
+                                        order_id: response.razorpay_order_id,
+                                        planId,
+                                    }));
+                                }
+                            } else {
+                                throw new Error(result.error || 'Verification failed');
+                            }
+                        } catch (verifyErr) {
+                            status.textContent = 'Verification failed: ' + verifyErr.message;
+                            status.className = 'status error';
+                            btn.disabled = false;
+                            btn.textContent = `Retry ₹${plan.price}`;
+                        }
+                    },
+                };
+
+                const rzp = new Razorpay(options);
+                rzp.on('payment.failed', function (response) {
+                    status.textContent = 'Payment failed: ' + (response.error?.description || 'Unknown error');
+                    status.className = 'status error';
+                    btn.disabled = false;
+                    btn.textContent = `Retry ₹${plan.price}`;
+
+                    if (source === 'app' && window.ReactNativeWebView) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'PAYMENT_FAILED',
+                            error: response.error?.description || 'Payment failed',
+                        }));
+                    }
+                });
+                rzp.open();
+
+            } catch (err) {
+                status.textContent = 'Error: ' + err.message;
+                status.className = 'status error';
+                btn.disabled = false;
+                btn.textContent = `Retry ₹${plan.price}`;
+            }
+        }
+    </script>
+</body>
+</html>

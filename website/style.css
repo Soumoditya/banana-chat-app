@@ -445,6 +445,21 @@ ul { list-style: none; }
     border-bottom: 1px solid var(--border);
 }
 .tier-features li:last-child { border: none; }
+.tier-subscribe-btn {
+    display: block;
+    margin-top: 20px; padding: 12px 20px;
+    border-radius: 10px;
+    background: var(--tier-color, var(--yellow));
+    color: #000; font-size: 14px; font-weight: 700;
+    text-decoration: none; text-align: center;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    letter-spacing: 0.01em;
+}
+.tier-subscribe-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--tier-color, var(--yellow)) 35%, transparent);
+    filter: brightness(1.1);
+}
 
 /* ─── Tech Stack ─── */
 .stack { padding: 100px 48px; }
