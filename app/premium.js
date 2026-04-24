@@ -60,27 +60,12 @@ export default function PremiumScreen() {
         }
     };
 
-    // ─── UPI Payment ───
-    const handleUPIPay = async (plan) => {
-        const amount = plan.price;
-        const note = `${APP_NAME} ${plan.name} Plan - ${user?.uid?.slice(0, 8)}`;
-        const upiUrl = `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(APP_NAME)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
-
-        try {
-            const supported = await Linking.canOpenURL(upiUrl);
-            if (supported) {
-                setPaymentStep('paying');
-                setPaymentMethod('upi');
-                await Linking.openURL(upiUrl);
-            } else {
-                showToast('Install Google Pay, PhonePe, or Paytm', 'warning', 'No UPI App');
-            }
-        } catch {
-            showToast('Could not open UPI app', 'error');
-        }
+    // ─── Razorpay Payment (Primary) ───
+    const handleRazorpayPay = () => {
+        router.push({ pathname: '/razorpay-checkout', params: { planId: selectedPlan } });
     };
 
-    // ─── PayPal Payment ───
+    // ─── PayPal Payment (International Fallback) ───
     const handlePayPalPay = async (plan) => {
         const amount = (plan.price / 80).toFixed(2);
         const paypalUrl = `${PAYPAL_LINK}/${amount}USD`;
@@ -93,18 +78,18 @@ export default function PremiumScreen() {
         }
     };
 
-    // ─── Confirm & Submit Request ───
+    // ─── Confirm PayPal Payment (manual) ───
     const handleConfirmPayment = async () => {
         const plan = PREMIUM_PLANS[selectedPlan];
         if (!plan || !user?.uid) return;
 
         showConfirm(
             'Confirm Payment',
-            `Did you complete the ₹${plan.price} payment for ${plan.name}?`,
+            `Did you complete the $${(plan.price / 80).toFixed(2)} PayPal payment for ${plan.name}?`,
             async () => {
                 try {
                     setProcessing(true);
-                    await submitPremiumRequest(user.uid, selectedPlan, paymentMethod || 'upi');
+                    await submitPremiumRequest(user.uid, selectedPlan, 'paypal');
                     setProcessing(false);
                     setPaymentStep('submitted');
                 } catch (err) {
@@ -317,21 +302,24 @@ export default function PremiumScreen() {
                 {!adminUser && paymentStep === 'select' && (
                     <View style={styles.paymentSection}>
                         <Text style={styles.sectionTitle}>Pay with</Text>
+
+                        {/* Razorpay — Primary */}
                         <TouchableOpacity
-                            style={styles.payBtn}
-                            onPress={() => handleUPIPay(PREMIUM_PLANS[selectedPlan])}
+                            style={[styles.payBtn, styles.razorpayBtn]}
+                            onPress={handleRazorpayPay}
                         >
-                            <View style={[styles.payIconBg, { backgroundColor: '#5F259F' }]}>
-                                <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>UPI</Text>
+                            <View style={[styles.payIconBg, { backgroundColor: '#2563EB' }]}>
+                                <Ionicons name="card" size={18} color="#fff" />
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.payBtnTitle}>Pay with UPI</Text>
-                                <Text style={styles.payBtnSub}>GPay • PhonePe • Paytm • Any UPI</Text>
+                                <Text style={styles.payBtnTitle}>Pay with Razorpay</Text>
+                                <Text style={styles.payBtnSub}>UPI • Cards • Wallets • Netbanking</Text>
                             </View>
                             <Text style={styles.payBtnAmount}>₹{PREMIUM_PLANS[selectedPlan]?.price}</Text>
                             <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                         </TouchableOpacity>
 
+                        {/* PayPal — International fallback */}
                         <TouchableOpacity
                             style={styles.payBtn}
                             onPress={() => handlePayPalPay(PREMIUM_PLANS[selectedPlan])}
@@ -350,7 +338,7 @@ export default function PremiumScreen() {
                         </TouchableOpacity>
 
                         <Text style={styles.disclaimer}>
-                            After paying, come back and tap "Activate Premium" to submit your request. Admin approval usually takes minutes.
+                            Razorpay: Instant activation — no admin approval needed.{"\n"}PayPal: Requires manual verification.
                         </Text>
                     </View>
                 )}
@@ -543,6 +531,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
         backgroundColor: Colors.surfaceLight, borderRadius: BorderRadius.lg,
         padding: Spacing.lg, marginBottom: Spacing.sm,
+    },
+    razorpayBtn: {
+        borderWidth: 1.5, borderColor: '#2563EB',
+        backgroundColor: 'rgba(37,99,235,0.08)',
     },
     payIconBg: {
         width: 38, height: 38, borderRadius: 12,
