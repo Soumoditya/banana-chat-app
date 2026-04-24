@@ -209,4 +209,4 @@ npx expo run:android
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](https://github.com/Soumoditya/banana-chat-app/blob/master/LICENSE) for details.
